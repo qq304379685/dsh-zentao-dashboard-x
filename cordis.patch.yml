@@ -1,0 +1,6 @@
+# 把禅道面板插件插入 profile 的插件层栈。
+# 这里不放任何地址 / 账号 / 密码：登录信息由面板右上角「设置」写入
+# <profile>/data/dsh-zentao-panel/account.json（仅本机可读）。
+- insert:
+    - id: zentao-panel
+      name: 'dsh-zentao-panel'

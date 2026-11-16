@@ -1,0 +1,24 @@
+# 依赖与构建产物
+node_modules/
+*.tgz
+*.log
+
+# 本机截图与调试脚本（不入库）
+*.png
+*.webp
+_screen*.png
+_crop*.png
+_*.mjs
+_*.ps1
+_*.py
+_needle.txt
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 本机凭据（绝不入库；正常运行也不在这个目录）
+account.json
+.env
