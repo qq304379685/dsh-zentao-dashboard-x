@@ -3,4 +3,4 @@
 # <profile>/data/dsh-zentao-panel/account.json（仅本机可读）。
 - insert:
     - id: zentao-panel
-      name: 'dsh-zentao-panel'
+      name: '@qq304379685/dsh-zentao-panel'

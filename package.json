@@ -1,5 +1,5 @@
 {
-  "name": "dsh-zentao-panel",
+  "name": "@qq304379685/dsh-zentao-panel",
   "version": "0.1.0",
   "description": "ZenTao panel for the DeepSeek Harness Web UI: bugs, my work, tasks and stories, plus zentao_* tools for the assistant.",
   "type": "module",

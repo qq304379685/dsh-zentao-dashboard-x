@@ -5,7 +5,7 @@
  * 数据全部走同源只读接口 `/zentao-panel/api/*`，由 Host 半边带 token 访问禅道。
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-zentao-panel',
+  id: '@qq304379685/dsh-zentao-panel',
   factory(require) {
     const React = require('react')
     const h = React.createElement
