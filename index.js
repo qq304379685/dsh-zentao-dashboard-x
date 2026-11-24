@@ -1481,12 +1481,19 @@ function registerTools(ctx, client) {
  * @param {ZentaoClient} client - 禅道客户端。
  * @returns {Array<{ kind: 'exact', path: string, handler: (req: any, res: any) => Promise<void> }>} 路由。
  */
-function buildRoutes(client) {
+function buildRoutes(client, ctx) {
   /**
    * 统一包装：回环校验 + 异常转 JSON 错误。
    * @param {(url: URL) => Promise<unknown>} run - 业务处理。
    */
   const handler = (run) => async (req, res) => {
+    // DSH 自带的信任检查：Host/Origin 白名单 + 浏览器会话认证。
+    // 只判断来源是不是本机不够——任意网页的请求也来自本机，会绕过 isLoopback。
+    const refused = ctx?.connection?.requestRejection?.({ headers: req.headers })
+    if (refused !== undefined) {
+      writeJson(res, refused, { error: refused === 401 ? 'unauthorized' : 'forbidden' })
+      return
+    }
     if (!isLoopback(req)) {
       writeJson(res, 403, { error: 'forbidden: loopback-only' })
       return
@@ -1667,7 +1674,7 @@ function buildRoutes(client) {
 /** 插件名（Loader 行名）。 */
 export const name = 'zentao-panel'
 /** 依赖的 Host 服务。 */
-export const inject = ['webServer', 'tools']
+export const inject = ['webServer', 'tools', 'connection']
 
 /**
  * 挂载禅道面板的 Host 半边。
@@ -1682,7 +1689,7 @@ export function apply(ctx, config) {
   })
   const client = new ZentaoClient(config ?? {}, store)
   ctx.effect(() => {
-    const disposers = buildRoutes(client).map((route) => ctx.webServer.register(route))
+    const disposers = buildRoutes(client, ctx).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
