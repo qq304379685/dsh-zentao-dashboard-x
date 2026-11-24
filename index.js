@@ -749,6 +749,31 @@ class ZentaoClient {
       executionName = executions.find((item) => item.id === Number(task.execution))?.name ?? ''
     }
     const normalized = normalizeTask({ ...task, executionName }, names, true)
+    // 子任务：禅道详情接口把 children 返回成 { id: task } 字典，转成按 id 排序的数组。
+    normalized.children = Object.values(task.children ?? {})
+      .filter((child) => child && typeof child === 'object')
+      .map((child) => ({
+        id: Number(child.id ?? 0),
+        name: String(child.name ?? ''),
+        status: String(child.status ?? ''),
+        statusText: TASK_STATUS_TEXT[String(child.status ?? '')] ?? String(child.status ?? ''),
+        progress: Number(child.progress ?? 0),
+        assignedToName:
+          String(child.assignedToRealName ?? '') ||
+          names.get(String(child.assignedTo ?? '')) ||
+          String(child.assignedTo ?? ''),
+      }))
+      .sort((left, right) => left.id - right.id)
+    // 子任务要能跳回父任务，多取一次父任务名字（失败不阻塞详情）。
+    if (normalized.parent > 0) {
+      try {
+        const parentPayload = await this.detail(`/tasks/${normalized.parent}`, 'task')
+        const parentTask = parentPayload.task ?? parentPayload
+        normalized.parentName = String(parentTask.name ?? '')
+      } catch (error) {
+        normalized.parentName = ''
+      }
+    }
     normalized.actions = (Array.isArray(payload.actions) ? payload.actions : []).map((action) => normalizeAction(action, names))
     return normalized
   }
@@ -867,9 +892,11 @@ class ZentaoClient {
       : []
     if (list.length === 0) throw Object.assign(new Error('没有选中任何对象'), { status: 400 })
     if (list.length > 100) throw Object.assign(new Error('一次最多批量处理 100 条'), { status: 400 })
+    // 倒序执行：子任务 id 必然大于父任务，先处理子任务，父任务才能被关闭
+    const ordered = [...list].sort((left, right) => right - left)
     const failed = []
     let ok = 0
-    for (const id of list) {
+    for (const id of ordered) {
       try {
         if (action === 'assign') await this.assign(kind, id, (fields ?? {}).assignedTo)
         else await this.act(kind, id, action, fields ?? {})
@@ -1085,7 +1112,11 @@ function normalizeTask(task, names, withDetail = false) {
     execution: Number(task.execution ?? 0),
     executionName: String(task.executionName ?? ''),
     fromBug: Number(task.fromBug ?? 0),
-    childCount: Array.isArray(task.children) ? task.children.length : 0,
+    parent: Number(task.parent ?? 0),
+    path: String(task.path ?? ''),
+    isParent: Number(task.isParent ?? 0) === 1,
+    depth: Math.max(0, String(task.path ?? '').split(',').filter((part) => part !== '').length - 1),
+    childCount: Array.isArray(task.children) ? task.children.length : Object.keys(task.children ?? {}).length,
     finishedBy,
     finishedByName: finishedBy ? (names.get(finishedBy) ?? finishedBy) : '',
   }

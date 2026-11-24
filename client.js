@@ -130,6 +130,13 @@ window.__ModuleLoader__.load({
       'mine.tasks': '指派给我的任务',
       'mine.account': '当前账号',
       'tasks.execution': '迭代',
+      'tasks.subtasks': '子任务',
+      'tasks.main': '主任务',
+      'tasks.parent': '所属父任务',
+      'tasks.subCount': '子任务 {n} · 完成 {d}',
+      'tasks.belongsTo': '↳ 父任务 #{id}',
+      'tasks.collapseAll': '全部折叠',
+      'tasks.expandAll': '全部展开',
       'tasks.progress': '进度',
       'stories.product': '产品',
       'field.severity': '严重程度',
@@ -299,6 +306,13 @@ window.__ModuleLoader__.load({
       'mine.tasks': 'Tasks assigned to me',
       'mine.account': 'Account',
       'tasks.execution': 'Iteration',
+      'tasks.subtasks': 'Subtasks',
+      'tasks.main': 'Main task',
+      'tasks.parent': 'Parent task',
+      'tasks.subCount': 'Subtasks {n} · {d} done',
+      'tasks.belongsTo': '↳ Parent #{id}',
+      'tasks.collapseAll': 'Collapse all',
+      'tasks.expandAll': 'Expand all',
       'tasks.progress': 'Progress',
       'stories.product': 'Product',
       'field.severity': 'Severity',
@@ -388,6 +402,15 @@ window.__ModuleLoader__.load({
 .zt-scroll::-webkit-scrollbar-track{background:transparent}
 .zt-chipbtn{font:inherit;border-radius:8px;cursor:pointer;transition:background .12s ease}
 .zt-chipbtn:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary,#111) 8%,transparent)}
+/* 任务树：主任务 / 子任务 / 独立任务三层视觉 */
+.zt-row[data-kind="parent"]{box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.zt-row[data-kind="parent"]::after{content:'';position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--dsw-alias-brand-primary,#3b82f6)}
+.zt-row[data-kind="parent"] .zt-title{font-weight:700}
+.zt-row[data-kind="child"]{background:transparent;border-color:transparent}
+.zt-row[role="button"][data-kind="child"]:hover{background:var(--dsw-alias-bg-layer-2,#f6f7f9)!important;border-color:var(--dsw-alias-border-l2,#e3e6ea)!important;box-shadow:none}
+.zt-row[data-kind="child"] .zt-title{font-size:12.6px;font-weight:500;color:var(--dsw-alias-label-secondary,#475569)}
+.zt-kids{position:relative;margin-left:20px;padding-left:14px;border-left:2px solid var(--dsw-alias-border-l2,#e3e6ea);display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.zt-kids::before{content:'';position:absolute;left:-2px;top:0;width:2px;height:16px;background:var(--dsw-alias-brand-primary,#3b82f6);border-radius:2px}
 `
 
     /**
@@ -601,7 +624,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 列表行外壳：左侧信息区 + 右侧处理人列。 */
-    function Row({ children, right, active, overdue, onClick, selected, onSelect }) {
+    function Row({ children, right, active, overdue, onClick, selected, mixed = false, onSelect, dim, inset = 0, kind = 'card', accent = false }) {
       return h(
         'div',
         {
@@ -620,32 +643,39 @@ window.__ModuleLoader__.load({
           className: 'zt-row',
           'data-active': active ? '1' : undefined,
           'data-overdue': overdue ? '1' : undefined,
+          'data-kind': kind,
           style: {
             position: 'relative',
             display: 'flex',
             alignItems: 'flex-start',
             gap: 14,
-            width: '100%',
+            width: inset > 0 ? `calc(100% - ${inset}px)` : '100%',
+            marginLeft: inset,
             boxSizing: 'border-box',
-            padding: '11px 14px',
-            borderRadius: 11,
-            border: `1px solid ${C.line}`,
-            background: C.layer1,
+            padding: kind === 'child' ? '8px 12px' : '11px 14px',
+            borderRadius: kind === 'child' ? 9 : 11,
+            // 主任务：品牌色浅底 + 淡描边；子任务：中性浅底、无描边 —— 一眼分两层
+            border: `1px solid ${kind === 'child' ? 'transparent' : `color-mix(in srgb, ${C.brand} 22%, ${C.line})`}`,
+            background:
+              kind === 'child'
+                ? `color-mix(in srgb, ${C.text} 4%, transparent)`
+                : `color-mix(in srgb, ${C.brand} 5%, ${C.layer1})`,
             textAlign: 'left',
+            opacity: dim ? 0.62 : 1,
             cursor: onClick ? 'pointer' : 'default',
           },
         },
-        overdue
+        overdue || accent
           ? h('span', {
               style: {
                 position: 'absolute',
                 left: 0,
-                top: 0,
-                bottom: 0,
+                top: accent && !overdue ? 11 : 0,
+                bottom: accent && !overdue ? 11 : 0,
                 width: 3,
-                background: C.danger,
-                borderTopLeftRadius: 11,
-                borderBottomLeftRadius: 11,
+                background: overdue ? C.danger : C.brand,
+                borderTopLeftRadius: overdue ? 11 : 3,
+                borderBottomLeftRadius: overdue ? 11 : 3,
               },
             })
           : null,
@@ -653,6 +683,9 @@ window.__ModuleLoader__.load({
           ? null
           : h('input', {
               type: 'checkbox',
+              ref: (node) => {
+                if (node) node.indeterminate = Boolean(mixed)
+              },
               checked: Boolean(selected),
               onClick: (event) => event.stopPropagation(),
               onKeyDown: (event) => event.stopPropagation(),
@@ -694,7 +727,17 @@ window.__ModuleLoader__.load({
       }, [])
       const replace = useCallback((list) => setIds(new Set(list)), [])
       const clear = useCallback(() => setIds(new Set()), [])
-      return { ids, list: [...ids], count: ids.size, has, toggle, replace, clear }
+      const setMany = useCallback((list, on) => {
+        setIds((previous) => {
+          const next = new Set(previous)
+          for (const id of list) {
+            if (on) next.add(id)
+            else next.delete(id)
+          }
+          return next
+        })
+      }, [])
+      return { ids, list: [...ids], count: ids.size, has, toggle, replace, clear, setMany }
     }
 
     /** 批量操作条：选中若干行后出现在列表上方。 */
@@ -823,14 +866,15 @@ window.__ModuleLoader__.load({
     }
 
     /** 行标题。 */
-    function Title({ children }) {
+    function Title({ children, size = 13.5, weight = 580, color = C.text }) {
       return h(
         'span',
         {
+          className: 'zt-title',
           style: {
-            fontSize: 13.5,
-            color: C.text,
-            fontWeight: 580,
+            fontSize: size,
+            color,
+            fontWeight: weight,
             lineHeight: 1.45,
             overflow: 'hidden',
             display: '-webkit-box',
@@ -2162,10 +2206,79 @@ window.__ModuleLoader__.load({
     }
 
     /** 任务列表行。 */
-    function TaskRow({ task, t, active, onOpen, selected, onSelect }) {
+    function TaskRow({ task, t, active, onOpen, selected, onSelect, kind = 'card', collapsed = false, childCount = 0, onToggle = null, summary = null, parentLabel = '', dimmed = false }) {
       const due = dueInfo(task.deadline)
       const finished = task.status === 'done' || task.status === 'closed'
       const percent = Math.max(0, Math.min(100, Number(task.progress) || 0))
+      const shownPercent = summary ? summary.progress : percent
+      /** 折叠箭头只对父任务渲染；点击不触发行本身的打开详情。 */
+      const toggle =
+        childCount > 0 && onToggle
+          ? h(
+              'span',
+              {
+                role: 'button',
+                tabIndex: 0,
+                'aria-label': t('tasks.subtasks'),
+                onClick: (event) => {
+                  event.stopPropagation()
+                  onToggle()
+                },
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onToggle()
+                  }
+                },
+                style: {
+                  flex: 'none',
+                  width: 14,
+                  height: 14,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: C.sub,
+                  fontSize: 10,
+                  transform: collapsed ? 'rotate(-90deg)' : 'none',
+                  transition: 'transform .12s ease',
+                },
+              },
+              '▼',
+            )
+          : null
+      /** 子任务：单行紧凑呈现，与父任务卡片、独立任务卡片形成三级差异。 */
+      if (kind === 'child') {
+        return h(
+          Row,
+          {
+            active,
+            overdue: due.level === 'overdue' && !finished,
+            onClick: onOpen,
+            selected,
+            onSelect,
+            dim: dimmed,
+            kind,
+          },
+          h(
+            'span',
+            { style: { display: 'flex', alignItems: 'center', gap: 9, minWidth: 0, width: '100%' } },
+            h(IdTag, { id: task.id }),
+            h(
+              'span',
+              { style: { minWidth: 0, maxWidth: '52%', display: 'flex', overflow: 'hidden' } },
+              h(Title, { size: 12.6, weight: 500, color: C.sub }, task.name),
+            ),
+            h(Assignee, { name: task.assignedToName, fallback: t('field.unassigned') }),
+            h(StatusPill, { text: task.statusText, color: statusColor(task.status) }),
+            h(Badge, { color: shownPercent >= 100 ? C.ok : C.sub }, `${shownPercent}%`),
+            h(DueBadge, { value: task.deadline, t }),
+            h('span', { style: { flex: 1 } }),
+          ),
+        )
+      }
+
       return h(
         Row,
         {
@@ -2174,24 +2287,38 @@ window.__ModuleLoader__.load({
           onClick: onOpen,
           selected,
           onSelect,
+          dim: dimmed,
+          kind,
         },
         h(
           'span',
           { style: { display: 'flex', gap: 8, alignItems: 'center', minWidth: 0, width: '100%' } },
+          toggle,
           h(IdTag, { id: task.id }),
-          h('span', { style: { flex: 1, minWidth: 0, display: 'flex' } }, h(Title, null, task.name)),
+          h(
+            'span',
+            { style: { flex: 1, minWidth: 0, display: 'flex' } },
+            kind === 'child'
+              ? h(Title, { size: 12.6, weight: 500, color: C.sub }, task.name)
+              : h(Title, null, task.name),
+          ),
         ),
         h(
           'span',
           { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } },
+          kind === 'parent' ? h(Badge, { color: C.brand }, t('tasks.main')) : null,
           h(Assignee, { name: task.assignedToName, fallback: t('field.unassigned') }),
           h(StatusPill, { text: task.statusText, color: statusColor(task.status) }),
           h(Badge, { color: task.pri <= 2 ? C.warn : C.sub }, task.priText),
-          h(Badge, { color: percent > 0 ? C.ok : C.sub }, `${t('field.progress')} ${percent}%`),
+          h(Badge, { color: shownPercent > 0 ? C.ok : C.sub }, `${t('field.progress')} ${shownPercent}%`),
           h(DueBadge, { value: task.deadline, t }),
+          summary
+            ? h(Badge, { color: summary.done === summary.total ? C.ok : C.brand }, fill(t('tasks.subCount'), { n: summary.total, d: summary.done }))
+            : null,
         ),
         h(Meta, {
           items: [
+            parentLabel,
             task.executionName,
             `${t('field.estimate')} ${task.estimate || 0} / ${t('field.consumed')} ${task.consumed || 0} / ${t('field.left')} ${task.left || 0}${t('unit.hour')}`,
             task.openedDate,
@@ -2200,8 +2327,34 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** 把扁平任务列表按 parent 组装成树；父任务不在列表里时当根，保证不丢行。 */
+    function buildTaskTree(list, compare) {
+      const nodes = new Map()
+      list.forEach((task) => nodes.set(task.id, { task, children: [] }))
+      const roots = []
+      nodes.forEach((node) => {
+        const parent = nodes.get(node.task.parent)
+        if (parent && parent !== node) parent.children.push(node)
+        else roots.push(node)
+      })
+      const sortLevel = (items) => {
+        items.sort((left, right) => compare(left.task, right.task))
+        items.forEach((item) => sortLevel(item.children))
+      }
+      sortLevel(roots)
+      return roots
+    }
+
+    /** 父任务的子任务汇总：条数、完成数、平均进度。 */
+    function childSummary(children) {
+      if (children.length === 0) return null
+      const done = children.filter((node) => node.task.status === 'done' || node.task.status === 'closed').length
+      const progress = Math.round(children.reduce((sum, node) => sum + (Number(node.task.progress) || 0), 0) / children.length)
+      return { total: children.length, done, progress }
+    }
+
     /** 任务详情。 */
-    function TaskDetail({ task, t, onClose, onDone }) {
+    function TaskDetail({ task, t, onClose, onDone, onOpenTask }) {
       return h(
         DetailShell,
         { title: `${t('detail.task')} #${task.id}`, onClose },
@@ -2223,6 +2376,75 @@ window.__ModuleLoader__.load({
           h(Field, { label: t('field.assignedTo') }, task.assignedToName || '—'),
           h(Field, { label: t('field.openedBy') }, `${task.openedByName || '—'}${task.openedDate ? ` · ${task.openedDate}` : ''}`),
         ),
+        task.parent > 0
+          ? h(
+              'div',
+              { style: { display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 12, color: C.dim } },
+              h('span', null, t('tasks.parent')),
+              onOpenTask
+                ? h(
+                    'span',
+                    {
+                      role: 'button',
+                      tabIndex: 0,
+                      onClick: () => onOpenTask(task.parent),
+                      onKeyDown: (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onOpenTask(task.parent)
+                        }
+                      },
+                      style: { color: C.brand, cursor: 'pointer', fontWeight: 600 },
+                    },
+                    `#${task.parent} ${task.parentName || ''}`.trim(),
+                  )
+                : h('span', null, `#${task.parent} ${task.parentName || ''}`.trim()),
+            )
+          : null,
+        Array.isArray(task.children) && task.children.length > 0
+          ? h(
+              Section,
+              { title: `${t('tasks.subtasks')} (${task.children.length})` },
+              h(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 } },
+                task.children.map((child) =>
+                  h(
+                    'div',
+                    {
+                      key: child.id,
+                      role: onOpenTask ? 'button' : undefined,
+                      tabIndex: onOpenTask ? 0 : undefined,
+                      onClick: onOpenTask ? () => onOpenTask(child.id) : undefined,
+                      onKeyDown: onOpenTask
+                        ? (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              onOpenTask(child.id)
+                            }
+                          }
+                        : undefined,
+                      style: {
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'center',
+                        padding: '6px 8px',
+                        borderRadius: 8,
+                        border: `1px solid ${C.line}`,
+                        background: C.layer1,
+                        cursor: onOpenTask ? 'pointer' : 'default',
+                        fontSize: 12,
+                      },
+                    },
+                    h(IdTag, { id: child.id }),
+                    h('span', { style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, child.name),
+                    h(StatusPill, { text: child.statusText, color: statusColor(child.status) }),
+                    h('span', { style: { color: C.dim, fontVariantNumeric: 'tabular-nums' } }, `${child.progress}%`),
+                  ),
+                ),
+              ),
+            )
+          : null,
         h(TextBlock, { label: t('field.desc'), text: task.desc }),
         task.storyTitle
           ? h(TextBlock, { label: `${t('field.story')} #${task.storyID} ${task.storyTitle}`, text: task.storySpec })
@@ -2909,6 +3131,7 @@ window.__ModuleLoader__.load({
                       t,
                       active: open?.type === 'task' && open.id === item.id,
                       onOpen: () => setOpen({ type: 'task', id: item.id }),
+                      parentLabel: item.task.parent > 0 ? fill(t('tasks.belongsTo'), { id: item.task.parent }) : '',
                     }),
               ),
         ),
@@ -2917,7 +3140,13 @@ window.__ModuleLoader__.load({
           : detail?.kind === 'ready'
             ? detail.type === 'bug'
               ? h(BugDetail, { bug: detail.item, t, onClose: () => setOpen(null), onDone: () => setOpen(null) })
-              : h(TaskDetail, { task: detail.item, t, onClose: () => setOpen(null), onDone: () => setOpen(null) })
+              : h(TaskDetail, {
+                  task: detail.item,
+                  t,
+                  onClose: () => setOpen(null),
+                  onDone: () => setOpen(null),
+                  onOpenTask: (id) => setOpen({ type: 'task', id }),
+                })
             : h(
                 'div',
                 { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
@@ -2993,22 +3222,158 @@ window.__ModuleLoader__.load({
 
       const raw = state.kind === 'ready' ? state.tasks : []
 
-      /** 禅道的任务接口不吃 status 参数，全部在前端过滤。 */
-      const tasks = useMemo(() => {
-        const filtered = raw.filter((task) => {
-          if (status && task.statusText !== status) return false
-          if (pri && String(task.pri) !== pri) return false
-          if (!hitOwner(task.assignedToName, owner)) return false
-          return hitKeyword(keyword, task.id, task.name, task.assignedToName, task.executionName)
-        })
-        const SORT = {
+      const SORTERS = useMemo(
+        () => ({
           id: (left, right) => right.id - left.id,
           pri: (left, right) => (left.pri ?? 9) - (right.pri ?? 9) || right.id - left.id,
           deadline: (left, right) => dueRank(left.deadline) - dueRank(right.deadline) || right.id - left.id,
           progress: (left, right) => (right.progress ?? 0) - (left.progress ?? 0) || right.id - left.id,
+        }),
+        [],
+      )
+      const compare = SORTERS[sort] ?? SORTERS.id
+
+      /** 禅道的任务接口不吃 status 参数，全部在前端过滤。 */
+      const matched = useMemo(
+        () =>
+          raw.filter((task) => {
+            if (status && task.statusText !== status) return false
+            if (pri && String(task.pri) !== pri) return false
+            if (!hitOwner(task.assignedToName, owner)) return false
+            return hitKeyword(keyword, task.id, task.name, task.assignedToName, task.executionName)
+          }),
+        [raw, status, pri, owner, keyword],
+      )
+      const matchedIds = useMemo(() => new Set(matched.map((task) => task.id)), [matched])
+
+      /** 命中子任务时把父链补回来，避免树里出现孤儿行（补进来的父行会调暗）。 */
+      const tasks = useMemo(() => {
+        const byId = new Map(raw.map((task) => [task.id, task]))
+        const kept = matched.slice()
+        const seen = new Set(kept.map((task) => task.id))
+        kept.forEach((task) => {
+          let parentID = Number(task.parent ?? 0)
+          let guard = 0
+          while (parentID > 0 && guard < 16) {
+            const parentTask = byId.get(parentID)
+            if (!parentTask) break
+            if (!seen.has(parentID)) {
+              seen.add(parentID)
+              kept.push(parentTask)
+            }
+            parentID = Number(parentTask.parent ?? 0)
+            guard += 1
+          }
+        })
+        return kept
+      }, [raw, matched])
+
+      const [collapsed, setCollapsed] = useState(() => new Set())
+      const tree = useMemo(() => buildTaskTree(tasks, compare), [tasks, compare])
+
+      /** 全选本页：包含父任务（父任务勾选即整棵子树，批量按 id 倒序执行，先关子任务）。 */
+      const selectableIds = useMemo(() => {
+        const ids = []
+        const walk = (nodes) =>
+          nodes.forEach((node) => {
+            ids.push(node.task.id)
+            walk(node.children)
+          })
+        walk(tree)
+        return ids
+      }, [tree])
+
+      const parentIds = useMemo(() => {
+        const ids = []
+        const walk = (nodes) =>
+          nodes.forEach((node) => {
+            if (node.children.length > 0) {
+              ids.push(node.task.id)
+              walk(node.children)
+            }
+          })
+        walk(tree)
+        return ids
+      }, [tree])
+
+      /** 递归渲染：父行 + 缩进在竖线里的子行，视觉上是一组。 */
+      const subtreeIds = (node) => {
+        const out = [node.task.id]
+        const walk = (current) => {
+          for (const kid of current.children ?? []) {
+            out.push(kid.task.id)
+            walk(kid)
+          }
         }
-        return filtered.sort(SORT[sort] ?? SORT.id)
-      }, [raw, status, pri, owner, keyword, sort])
+        walk(node)
+        return out
+      }
+      const renderNodes = (nodes, depth) =>
+        nodes.map((node) => {
+          const kids = node.children
+          const folded = collapsed.has(node.task.id)
+          const scopeIds = subtreeIds(node)
+          const pickedCount = scopeIds.filter((id) => selection.has(id)).length
+          const allPicked = pickedCount === scopeIds.length
+          return h(
+            'div',
+            { key: node.task.id, style: { display: 'flex', flexDirection: 'column' } },
+            h(TaskRow, {
+              task: node.task,
+              t,
+              kind: depth > 0 ? 'child' : 'parent',
+              active: openTask === node.task.id,
+              onOpen: () => setOpenTask(node.task.id),
+              selected: allPicked,
+              mixed: pickedCount > 0 && !allPicked,
+              onSelect: (on) => selection.setMany(scopeIds, on),
+              collapsed: folded,
+              childCount: kids.length,
+              onToggle:
+                kids.length === 0
+                  ? null
+                  : () =>
+                      setCollapsed((previous) => {
+                        const next = new Set(previous)
+                        if (next.has(node.task.id)) next.delete(node.task.id)
+                        else next.add(node.task.id)
+                        return next
+                      }),
+              summary: childSummary(kids),
+              dimmed: !matchedIds.has(node.task.id),
+            }),
+            kids.length > 0 && !folded
+              ? h(
+                  'div',
+                  {
+                    className: 'zt-kids',
+                    style: {
+                      position: 'relative',
+                      marginLeft: 20,
+                      paddingLeft: 14,
+                      marginTop: 8,
+                      borderLeft: `2px solid ${C.line}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    },
+                  },
+                  h('span', {
+                    style: {
+                      position: 'absolute',
+                      left: -2,
+                      top: 0,
+                      width: 2,
+                      height: 16,
+                      background: C.brand,
+                      borderRadius: 2,
+                    },
+                  }),
+                  renderNodes(kids, depth + 1),
+                )
+              : null,
+          )
+        })
 
       const filtered = status || pri || owner || keyword
 
@@ -3087,14 +3452,24 @@ window.__ModuleLoader__.load({
               { style: { fontSize: 11.5, color: C.dim } },
               state.kind === 'ready' ? fill(t('bugs.total'), { n: tasks.length }) : '',
             ),
-            h(Button, { onClick: () => selection.replace(tasks.map((item) => item.id)) }, t('batch.selectAll')),
+            parentIds.length > 0
+              ? h(
+                  Button,
+                  {
+                    onClick: () =>
+                      setCollapsed((previous) => (previous.size > 0 ? new Set() : new Set(parentIds))),
+                  },
+                  collapsed.size > 0 ? t('tasks.expandAll') : t('tasks.collapseAll'),
+                )
+              : null,
+            h(Button, { onClick: () => selection.replace(selectableIds) }, t('batch.selectAll')),
             h(Button, { onClick: () => void load() }, t('panel.refresh')),
           ),
         ),
         h(SelectionBar, {
           count: selection.count,
           list: selection.list,
-          shownIds: tasks.map((item) => item.id),
+          shownIds: selectableIds,
           t,
           busy: false,
           onAction: (action) => setBatch(action),
@@ -3111,22 +3486,18 @@ window.__ModuleLoader__.load({
               ? h(State, { kind: state.kind, message: state.message, onRetry: () => void load(), t })
               : tasks.length === 0
                 ? h(State, { kind: 'empty', t })
-                : tasks.map((task) =>
-                    h(TaskRow, {
-                      key: task.id,
-                      task,
-                      t,
-                      active: openTask === task.id,
-                      onOpen: () => setOpenTask(task.id),
-                      selected: selection.has(task.id),
-                      onSelect: (on) => selection.toggle(task.id, on),
-                    }),
-                  ),
+                : renderNodes(tree, 0),
           ),
           openTask === null
             ? null
             : detail?.kind === 'ready'
-              ? h(TaskDetail, { task: detail.task, t, onClose: () => setOpenTask(null), onDone: () => setOpenTask(null) })
+              ? h(TaskDetail, {
+                  task: detail.task,
+                  t,
+                  onClose: () => setOpenTask(null),
+                  onDone: () => setOpenTask(null),
+                  onOpenTask: (id) => setOpenTask(id),
+                })
               : h(
                   'div',
                   { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
