@@ -1477,13 +1477,41 @@ function registerTools(ctx, client) {
 }
 
 /**
- * 构建本插件注册到 webServer 的只读路由表。
+ * 列出 DSH 的工作区，供「转为会话」选择目录。
+ * 只读 registry 的内存投影；status() 会探测目录存在性，缺失的标 missing 让前端置灰。
+ */
+async function listWorkspaces(ctx) {
+  const registry = ctx?.workspaceRegistry
+  if (registry === undefined) return []
+  const items = registry.list()
+  const workspaces = []
+  for (const workspace of items) {
+    let missing = false
+    try {
+      missing = (await workspace.status()) === 'missing-dir'
+    } catch {
+      // 探测失败不等于目录缺失，按可用处理。
+      missing = false
+    }
+    workspaces.push({
+      id: String(workspace.id),
+      title: String(workspace.title ?? ''),
+      path: String(workspace.path ?? ''),
+      missing,
+    })
+  }
+  return workspaces
+}
+
+/**
+ * 构建本插件注册到 webServer 的路由表。
  * @param {ZentaoClient} client - 禅道客户端。
+ * @param {any} ctx - Cordis 上下文（工作区、连接信任检查）。
  * @returns {Array<{ kind: 'exact', path: string, handler: (req: any, res: any) => Promise<void> }>} 路由。
  */
 function buildRoutes(client, ctx) {
   /**
-   * 统一包装：回环校验 + 异常转 JSON 错误。
+   * 统一包装：DSH 连接信任检查 + 回环校验 + 异常转 JSON 错误。
    * @param {(url: URL) => Promise<unknown>} run - 业务处理。
    */
   const handler = (run) => async (req, res) => {
@@ -1597,6 +1625,28 @@ function buildRoutes(client, ctx) {
     },
     {
       kind: 'exact',
+      path: `${ROUTE_PREFIX}/workspaces`,
+      handler: handler(async (_url, req) => {
+        if ((req.method ?? 'GET') === 'GET') return { workspaces: await listWorkspaces(ctx) }
+        if (req.method !== 'POST') throw Object.assign(new Error('只支持 GET 和 POST'), { status: 405 })
+        const registry = ctx?.workspaceRegistry
+        if (registry === undefined) throw Object.assign(new Error('当前环境没有工作区服务'), { status: 400 })
+        const body = await readJsonBody(req)
+        const path = String(body?.path ?? '').trim()
+        if (path === '') throw Object.assign(new Error('缺少必填字段：path'), { status: 400 })
+        const workspace = await registry.create(path)
+        return {
+          workspace: {
+            id: String(workspace.id),
+            title: String(workspace.title ?? ''),
+            path: String(workspace.path ?? ''),
+            missing: false,
+          },
+        }
+      }),
+    },
+    {
+      kind: 'exact',
       path: `${ROUTE_PREFIX}/users`,
       handler: handler(async () => ({ users: await client.users() })),
     },
@@ -1674,7 +1724,7 @@ function buildRoutes(client, ctx) {
 /** 插件名（Loader 行名）。 */
 export const name = 'zentao-panel'
 /** 依赖的 Host 服务。 */
-export const inject = ['webServer', 'tools', 'connection']
+export const inject = ['webServer', 'tools', 'connection', 'workspaceRegistry']
 
 /**
  * 挂载禅道面板的 Host 半边。

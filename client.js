@@ -48,6 +48,22 @@ window.__ModuleLoader__.load({
       'act.saving': '提交中…',
       'act.required': '请填写：{field}',
       'act.deleteConfirm': '删除后不可恢复，确认删除 #{id}？',
+      'session.toSession': '转为会话',
+      'session.title': '转为会话',
+      'session.hint': '创建后跳到新会话，这段上下文只放进输入框，确认后自己按回车发送。',
+      'session.workspace': '选择工作区',
+      'session.prompt': '初始提示词（可修改）',
+      'session.create': '创建会话',
+      'session.creating': '创建中…',
+      'session.newWorkspace': '新建工作区',
+      'session.pickDir': '选择目录…',
+      'session.missing': '目录不存在',
+      'session.empty': '还没有工作区',
+      'session.search': '搜索工作区',
+      'session.emptyPrompt': '提示词不能为空',
+      'session.copied': '当前环境无法新建会话，已把上下文复制到剪贴板。',
+      'session.noPicker': '这个环境不支持选择目录',
+      'session.createFailed': '创建工作区失败',
       'field.title': '标题',
       'field.name': '名称',
       'field.comment': '备注',
@@ -224,6 +240,22 @@ window.__ModuleLoader__.load({
       'act.saving': 'Saving…',
       'act.required': 'Required: {field}',
       'act.deleteConfirm': 'This cannot be undone. Delete #{id}?',
+      'session.toSession': 'To session',
+      'session.title': 'Send to a session',
+      'session.hint': 'Opens a new session with this context in the composer; nothing is sent until you press Enter.',
+      'session.workspace': 'Workspace',
+      'session.prompt': 'Initial prompt (editable)',
+      'session.create': 'Create session',
+      'session.creating': 'Creating…',
+      'session.newWorkspace': 'New workspace',
+      'session.pickDir': 'Choose folder…',
+      'session.missing': 'Folder missing',
+      'session.empty': 'No workspaces yet',
+      'session.search': 'Search workspaces',
+      'session.emptyPrompt': 'The prompt must not be empty',
+      'session.copied': 'Session creation is unavailable here; the context was copied to your clipboard.',
+      'session.noPicker': 'Choosing a folder is not supported here',
+      'session.createFailed': 'Could not create the workspace',
       'field.title': 'Title',
       'field.name': 'Name',
       'field.comment': 'Comment',
@@ -1453,6 +1485,9 @@ window.__ModuleLoader__.load({
     /**
      * 写操作成功后广播刷新：动作按钮在详情抽屉里，层级较深，用事件通知各页签重新拉数据。
      */
+    // 客户端 uiWorkspace 服务句柄：apply 时取一次；取不到时「转为会话」降级为复制到剪贴板。
+    let UI_WORKSPACE = null
+
     const REFRESH = {
       listeners: new Set(),
       on(fn) {
@@ -1767,6 +1802,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
       const [confirming, setConfirming] = useState(false)
+      const [toSession, setToSession] = useState(false)
 
       const actions = actionsFor(kind, item, t)
 
@@ -1822,14 +1858,16 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
-          actions.map((action) =>
-            h(
-              Button,
-              {
-                key: action.id,
-                onClick: () => start(action),
-              },
-              action.label,
+          [h(Button, { key: 'to-session', onClick: () => setToSession(true) }, t('session.toSession'))].concat(
+            actions.map((action) =>
+              h(
+                Button,
+                {
+                  key: action.id,
+                  onClick: () => start(action),
+                },
+                action.label,
+              ),
             ),
           ),
         ),
@@ -1878,6 +1916,315 @@ window.__ModuleLoader__.load({
               error ? h('div', { style: { fontSize: 12, color: C.danger } }, error) : null,
             )
           : null,
+        toSession ? h(SessionModal, { kind, item, t, onClose: () => setToSession(false) }) : null,
+      )
+    }
+
+    /** 把禅道对象整理成一段可以直接丢进会话的上下文。 */
+    function sessionPrompt(kind, item, baseUrl) {
+      const line = (label, value) => {
+        const text = value === undefined || value === null ? '' : String(value).trim()
+        return text === '' ? null : '- ' + label + '：' + text
+      }
+      const heading = (text) => '# ' + text
+      const section = (title, body) => {
+        const text = body === undefined || body === null ? '' : String(body).trim()
+        return text === '' ? [] : ['', '## ' + title, text]
+      }
+      const rows = []
+      let title = ''
+
+      if (kind === 'bug') {
+        title = '禅道缺陷 #' + item.id + ' ' + String(item.title ?? '')
+        rows.push(
+          line('状态', item.statusText),
+          line('类型', item.typeText),
+          line('严重程度', item.severityText),
+          line('优先级', item.priText),
+          line('产品', item.productName),
+          line('执行', item.executionName),
+          line('处理人', item.assignedToName),
+          line('创建者', item.openedByName),
+          line('创建时间', item.openedDate),
+          line('截止', item.deadline),
+        )
+      } else if (kind === 'task') {
+        title = '禅道任务 #' + item.id + ' ' + String(item.name ?? '')
+        rows.push(
+          line('迭代', item.executionName),
+          line('负责人', item.assignedToName),
+          line('状态', item.statusText),
+          line('优先级', item.priText),
+          line('进度', (item.progress ?? 0) + '%'),
+          line('预计 / 已耗 / 剩余', (item.estimate ?? 0) + ' / ' + (item.consumed ?? 0) + ' / ' + (item.left ?? 0) + ' 小时'),
+          line('预计开始', item.estStarted),
+          line('实际开始', item.realStarted),
+          line('截止', item.deadline),
+          line('完成时间', item.finishedDate),
+        )
+      } else {
+        title = '禅道需求 #' + item.id + ' ' + String(item.title ?? '')
+        rows.push(
+          line('产品', item.productName),
+          line('状态', item.statusText),
+          line('阶段', item.stageText),
+          line('优先级', item.priText),
+          line('预估工时', item.estimate === undefined ? '' : item.estimate + ' 小时'),
+          line('处理人', item.assignedToName),
+          line('创建者', item.openedByName),
+          line('创建时间', item.openedDate),
+        )
+      }
+
+      const parts = [heading(title), '', rows.filter(Boolean).join('\n')]
+
+      if (kind === 'bug') {
+        parts.push(...section('重现步骤', item.steps))
+        parts.push(...section('关联需求', item.storyTitle))
+        parts.push(...section('解决方案', item.resolutionText))
+      } else if (kind === 'task') {
+        parts.push(...section('描述', item.desc))
+        const story = [item.storyTitle, item.storySpec].filter((entry) => entry !== undefined && String(entry).trim() !== '')
+        parts.push(...section('关联需求' + (item.storyID ? ' #' + item.storyID : ''), story.join('\n\n')))
+        parts.push(...section('验收标准', item.storyVerify))
+        const children = Array.isArray(item.children) ? item.children : []
+        if (children.length > 0) {
+          const list = children.map((child) => '- #' + child.id + ' ' + child.name + '（' + (child.statusText ?? '') + '）').join('\n')
+          parts.push(...section('子任务', list))
+        }
+      } else {
+        parts.push(...section('需求描述', item.spec))
+        parts.push(...section('验收标准', item.verify))
+      }
+
+      if (baseUrl !== '') {
+        const object = kind === 'bug' ? 'bug' : kind === 'task' ? 'task' : 'story'
+        parts.push('', '来源：' + baseUrl + '/' + object + '-view-' + item.id + '.html')
+      }
+
+      return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n'
+    }
+
+    /** 复制到剪贴板（新建会话不可用时的兜底）。 */
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    /** 「转为会话」弹窗：选工作区 + 编辑初始提示词，只预填不发送。 */
+    function SessionModal({ kind, item, t, onClose }) {
+      const [workspaces, setWorkspaces] = useState([])
+      const [phase, setPhase] = useState('loading')
+      const [query, setQuery] = useState('')
+      const [selected, setSelected] = useState('')
+      const [prompt, setPrompt] = useState(() => sessionPrompt(kind, item, ''))
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+      const [hint, setHint] = useState('')
+
+      useEffect(() => {
+        let alive = true
+        void (async () => {
+          try {
+            const [config, listed] = await Promise.all([
+              api('/config').catch(() => ({ baseUrl: '' })),
+              api('/workspaces').catch(() => ({ workspaces: [] })),
+            ])
+            if (!alive) return
+            const root = String(config?.baseUrl ?? '').replace(/\/api\.php\/v2\/?$/, '')
+            setPrompt(sessionPrompt(kind, item, root))
+            const items = Array.isArray(listed?.workspaces) ? listed.workspaces : []
+            setWorkspaces(items)
+            const remembered = items.find((entry) => entry.id === VIEW.sessionWorkspace && entry.missing !== true)
+            const pick = remembered ?? items.find((entry) => entry.missing !== true) ?? items[0]
+            setSelected(pick ? pick.id : '')
+            setPhase('ready')
+          } catch (problem) {
+            if (!alive) return
+            setPhase('error')
+            setError(problem instanceof Error ? problem.message : String(problem))
+          }
+        })()
+        return () => {
+          alive = false
+        }
+      }, [])
+
+      const needle = query.trim().toLowerCase()
+      const shown = needle === ''
+        ? workspaces
+        : workspaces.filter((entry) => (entry.title + ' ' + entry.path).toLowerCase().indexOf(needle) >= 0)
+
+      const pickDirectory = async () => {
+        setError('')
+        setHint('')
+        try {
+          if (UI_WORKSPACE === null || typeof UI_WORKSPACE.pickDirectory !== 'function') throw new Error(t('session.noPicker'))
+          const path = await UI_WORKSPACE.pickDirectory()
+          if (path === null || path === undefined || path === '') return
+          const created = await api('/workspaces', { method: 'POST', body: { path } })
+          const entry = created?.workspace
+          if (!entry || !entry.id) throw new Error(t('session.createFailed'))
+          setWorkspaces((previous) => [entry].concat(previous.filter((old) => old.id !== entry.id)))
+          setSelected(entry.id)
+        } catch (problem) {
+          setError(problem instanceof Error ? problem.message : String(problem))
+        }
+      }
+
+      const create = () => {
+        setError('')
+        setHint('')
+        const text = prompt.trim()
+        if (text === '') {
+          setError(t('session.emptyPrompt'))
+          return
+        }
+        setBusy(true)
+        try {
+          if (UI_WORKSPACE === null || typeof UI_WORKSPACE.startSession !== 'function') throw new Error('ui-workspace-unavailable')
+          if (selected !== '') VIEW.sessionWorkspace = selected
+          UI_WORKSPACE.startSession(selected === '' ? undefined : selected, { prompt: text, whenDraftExists: 'append' })
+          onClose()
+        } catch (problem) {
+          void copyText(text)
+          setHint(t('session.copied'))
+          const message = problem instanceof Error ? problem.message : String(problem)
+          setError(message === 'ui-workspace-unavailable' ? '' : message)
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const body = h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+        h('div', { style: { fontSize: 12, lineHeight: 1.6, color: C.dim } }, t('session.hint')),
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+          h('div', { style: { fontSize: 12, fontWeight: 600, color: C.sub } }, t('session.workspace')),
+          workspaces.length > 5
+            ? h(SearchInput, { value: query, onChange: setQuery, placeholder: t('session.search') })
+            : null,
+          h(
+            'div',
+            {
+              className: 'zt-scroll',
+              style: {
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                maxHeight: 248,
+                overflowY: 'auto',
+                padding: 4,
+                borderRadius: 10,
+                border: '1px solid ' + C.line,
+                background: C.layer2,
+              },
+            },
+            phase === 'loading'
+              ? h('div', { style: { padding: '10px 8px', fontSize: 12, color: C.dim } }, t('common.loading'))
+              : shown.length === 0
+                ? h('div', { style: { padding: '10px 8px', fontSize: 12, color: C.dim } }, t('session.empty'))
+                : shown.map((entry) =>
+                    h(
+                      'button',
+                      {
+                        key: entry.id,
+                        type: 'button',
+                        onClick: () => {
+                          if (entry.missing === true) return
+                          setSelected(entry.id)
+                        },
+                        style: {
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          gap: 2,
+                          width: '100%',
+                          padding: '7px 9px',
+                          borderRadius: 8,
+                          border: '1px solid ' + (entry.id === selected ? C.brand : 'transparent'),
+                          background: entry.id === selected ? 'color-mix(in srgb, ' + C.brand + ' 10%, transparent)' : 'transparent',
+                          cursor: entry.missing === true ? 'not-allowed' : 'pointer',
+                          opacity: entry.missing === true ? 0.5 : 1,
+                          textAlign: 'left',
+                          font: 'inherit',
+                        },
+                      },
+                      h(
+                        'span',
+                        { style: { fontSize: 12.5, fontWeight: 600, color: C.text } },
+                        (entry.title === '' ? entry.path : entry.title) + (entry.missing === true ? ' · ' + t('session.missing') : ''),
+                      ),
+                      h(
+                        'span',
+                        {
+                          style: {
+                            fontSize: 11,
+                            color: C.dim,
+                            fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          },
+                        },
+                        entry.path,
+                      ),
+                    ),
+                  ),
+          ),
+          UI_WORKSPACE !== null && typeof UI_WORKSPACE?.pickDirectory === 'function'
+            ? h(
+                'div',
+                { style: { display: 'flex', justifyContent: 'flex-end' } },
+                h(Button, { onClick: () => void pickDirectory() }, t('session.newWorkspace')),
+              )
+            : null,
+        ),
+        h(
+          'div',
+          { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+          h('div', { style: { fontSize: 12, fontWeight: 600, color: C.sub } }, t('session.prompt')),
+          h('textarea', {
+            value: prompt,
+            onChange: (event) => setPrompt(event.target.value),
+            spellCheck: false,
+            style: {
+              width: '100%',
+              minHeight: 180,
+              resize: 'vertical',
+              padding: '9px 10px',
+              borderRadius: 10,
+              border: '1px solid ' + C.line,
+              background: C.layer1,
+              color: C.text,
+              font: '12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace',
+              boxSizing: 'border-box',
+            },
+          }),
+        ),
+        hint === '' ? null : h('div', { style: { fontSize: 12, color: C.warn, lineHeight: 1.6 } }, hint),
+        error === '' ? null : h('div', { style: { fontSize: 12, color: C.danger, lineHeight: 1.6 } }, error),
+      )
+
+      return h(
+        Modal,
+        {
+          title: t('session.title'),
+          onClose,
+          footer: [
+            h(Button, { key: 'cancel', onClick: onClose }, t('act.cancel')),
+            h(Button, { key: 'ok', onClick: create, primary: true, disabled: busy }, busy ? t('session.creating') : t('session.create')),
+          ],
+        },
+        body,
       )
     }
 
@@ -2519,7 +2866,7 @@ window.__ModuleLoader__.load({
      * 只在面板存活期间有效，不落盘。
      */
     // 各页签各自记忆筛选条件：缺陷页的“全部产品”(all) 不能带到需求页（需求接口必须给数字产品 ID）。
-    const VIEW = { product: '', status: 'unclosed', page: 1, execution: '', storyProduct: '' }
+    const VIEW = { product: '', status: 'unclosed', page: 1, execution: '', storyProduct: '', sessionWorkspace: '' }
 
     /** 缺陷页签。 */
     /** 未指派在筛选下拉里的取值。 */
@@ -3981,6 +4328,13 @@ window.__ModuleLoader__.load({
         }, 'zentao-panel: styles')
 
         const t = ctx.locale.bind(NS)
+
+        // 取不到 uiWorkspace 时（例如精简宿主），「转为会话」降级为复制到剪贴板。
+        try {
+          UI_WORKSPACE = ctx.get('uiWorkspace') ?? null
+        } catch {
+          UI_WORKSPACE = null
+        }
 
         ctx.effect(() => {
           const disposers = [
