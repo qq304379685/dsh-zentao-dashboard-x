@@ -436,13 +436,25 @@ window.__ModuleLoader__.load({
 .zt-chipbtn:hover{background:color-mix(in srgb,var(--dsw-alias-label-primary,#111) 8%,transparent)}
 /* 任务树：主任务 / 子任务 / 独立任务三层视觉 */
 .zt-row[data-kind="parent"]{box-shadow:0 1px 2px rgba(15,23,42,.05)}
-.zt-row[data-kind="parent"]::after{content:'';position:absolute;left:0;top:11px;bottom:11px;width:3px;border-radius:0 3px 3px 0;background:var(--dsw-alias-brand-primary,#3b82f6)}
+.zt-row[data-kind="parent"]>span:first-child{background:#2563eb}
 .zt-row[data-kind="parent"] .zt-title{font-weight:700}
 .zt-row[data-kind="child"]{background:transparent;border-color:transparent}
 .zt-row[role="button"][data-kind="child"]:hover{background:var(--dsw-alias-bg-layer-2,#f6f7f9)!important;border-color:var(--dsw-alias-border-l2,#e3e6ea)!important;box-shadow:none}
 .zt-row[data-kind="child"] .zt-title{font-size:12.6px;font-weight:500;color:var(--dsw-alias-label-secondary,#475569)}
-.zt-kids{position:relative;margin-left:20px;padding-left:14px;border-left:2px solid var(--dsw-alias-border-l2,#e3e6ea);display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.zt-kids::before{content:'';position:absolute;left:-2px;top:0;width:2px;height:16px;background:var(--dsw-alias-brand-primary,#3b82f6);border-radius:2px}
+.zt-kids{position:relative;margin-left:20px;padding-left:14px;border-left:2px solid color-mix(in srgb,var(--dsw-alias-border-l2,#e3e6ea) 80%,transparent);display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.zt-kids::before{content:'';position:absolute;left:-2px;top:0;width:2px;height:16px;background:#2563eb;border-radius:2px}
+/* —— 清爽卡片视觉层 —— */
+.zt-hero{position:relative}
+.zt-hero::before{content:'';position:absolute;left:-8px;right:-8px;top:-10px;height:132px;border-radius:18px;pointer-events:none;background:radial-gradient(120% 100% at 0% 0%,color-mix(in srgb,var(--dsw-alias-brand-primary,#3b82f6) 9%,transparent),transparent 70%)}
+.zt-row{box-shadow:0 1px 2px rgba(15,23,42,.045)}
+.zt-row[role="button"]:hover{transform:translateY(-1px);box-shadow:0 4px 14px -6px rgba(15,23,42,.18)!important}
+.zt-row[data-kind="child"]{box-shadow:none}
+.zt-row[data-kind="child"][role="button"]:hover{transform:none;box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2,#e3e6ea)!important}
+.zt-row[data-active="1"]{box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-brand-primary,#3b82f6) 16%,transparent),0 6px 18px -10px rgba(15,23,42,.25)!important}
+.zt-tab[data-on="1"]{color:var(--dsw-alias-brand-primary,#3b82f6)}
+.zt-filterbar{padding:2px 0 6px}
+.zt-drawer{box-shadow:-14px 0 40px -24px rgba(15,23,42,.4)}
+.zt-row input[type="checkbox"]{accent-color:var(--dsw-alias-brand-primary,#3b82f6);border-radius:4px}
 `
 
     /**
@@ -480,11 +492,24 @@ window.__ModuleLoader__.load({
     }
 
     /** 状态徽章配色。 */
+    /** 状态色：固定十六进制，避免主题 token 缺省时整片变黑。 */
+    const STATUS_HEX = {
+      wait: '#2563eb',
+      doing: '#d97706',
+      done: '#16a34a',
+      resolved: '#16a34a',
+      closed: '#6b7280',
+      cancelled: '#9ca3af',
+      active: '#dc2626',
+      paused: '#8b5cf6',
+    }
+
     function statusColor(status) {
-      if (status === 'active' || status === 'doing' || status === 'wait') return C.brand
-      if (status === 'resolved' || status === 'done') return C.ok
-      if (status === 'closed' || status === 'cancelled') return C.dim
-      return C.warn
+      if (STATUS_HEX[status]) return STATUS_HEX[status]
+      if (status === 'active' || status === 'doing' || status === 'wait') return '#2563eb'
+      if (status === 'resolved' || status === 'done') return '#16a34a'
+      if (status === 'closed' || status === 'cancelled') return '#6b7280'
+      return '#d97706'
     }
 
     /** 把禅道日期（YYYY-MM-DD 或带时间）转成当天 0 点的毫秒数，非法值返回 0。 */
@@ -522,10 +547,22 @@ window.__ModuleLoader__.load({
         { style: { display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 80 } },
         h(
           'div',
-          { style: { flex: 1, height: 4, borderRadius: 2, background: C.layer2, overflow: 'hidden' } },
-          h('div', { style: { width: `${percent}%`, height: '100%', background: C.brand } }),
+          { style: { flex: 1, height: 6, borderRadius: 999, background: C.layer2, overflow: 'hidden' } },
+          h('div', {
+            style: {
+              width: `${percent}%`,
+              height: '100%',
+              borderRadius: 999,
+              background: percent >= 100 ? C.ok : `linear-gradient(90deg, ${C.brand}, #60a5fa)`,
+              transition: 'width .25s ease',
+            },
+          }),
         ),
-        h('span', { style: { fontSize: 11, color: C.dim, fontVariantNumeric: 'tabular-nums', flex: 'none' } }, `${percent}%`),
+        h(
+          'span',
+          { style: { fontSize: 11.5, fontWeight: 560, color: percent >= 100 ? C.ok : C.sub, fontVariantNumeric: 'tabular-nums', flex: 'none' } },
+          `${percent}%`,
+        ),
       )
     }
 
@@ -641,22 +678,38 @@ window.__ModuleLoader__.load({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 5,
-            padding: '2px 8px',
+            padding: '2px 9px',
             borderRadius: 999,
-            fontSize: 11,
+            fontSize: 11.5,
+            fontWeight: 560,
             lineHeight: 1.5,
             whiteSpace: 'nowrap',
-            color,
-            background: `color-mix(in srgb, ${color} 11%, transparent)`,
+            color: color === '#6b7280' || color === '#9ca3af' ? C.sub : '#fff',
+            background:
+              color === '#6b7280' || color === '#9ca3af'
+                ? `color-mix(in srgb, ${color} 16%, transparent)`
+                : color,
+            boxShadow:
+              color === '#6b7280' || color === '#9ca3af'
+                ? 'none'
+                : `0 1px 2px color-mix(in srgb, ${color} 40%, transparent)`,
           },
         },
-        h('span', { style: { width: 5, height: 5, borderRadius: '50%', background: color, flex: 'none' } }),
+        h('span', {
+          style: {
+            width: 5,
+            height: 5,
+            borderRadius: '50%',
+            background: color === '#6b7280' || color === '#9ca3af' ? color : 'rgba(255,255,255,.9)',
+            flex: 'none',
+          },
+        }),
         text,
       )
     }
 
     /** 列表行外壳：左侧信息区 + 右侧处理人列。 */
-    function Row({ children, right, active, overdue, onClick, selected, mixed = false, onSelect, dim, inset = 0, kind = 'card', accent = false }) {
+    function Row({ children, right, active, overdue, onClick, selected, mixed = false, onSelect, dim, inset = 0, kind = 'card', accent = false, tone = null }) {
       return h(
         'div',
         {
@@ -687,27 +740,27 @@ window.__ModuleLoader__.load({
             padding: kind === 'child' ? '8px 12px' : '11px 14px',
             borderRadius: kind === 'child' ? 9 : 11,
             // 主任务：品牌色浅底 + 淡描边；子任务：中性浅底、无描边 —— 一眼分两层
-            border: `1px solid ${kind === 'child' ? 'transparent' : `color-mix(in srgb, ${C.brand} 22%, ${C.line})`}`,
-            background:
+            border: `1px solid ${kind === 'child' ? 'transparent' : `color-mix(in srgb, #2563eb 14%, ${C.line})`}`,
+            background: kind === 'child' ? 'transparent' : C.layer1,
+            boxShadow:
               kind === 'child'
-                ? `color-mix(in srgb, ${C.text} 4%, transparent)`
-                : `color-mix(in srgb, ${C.brand} 5%, ${C.layer1})`,
+                ? 'none'
+                : '0 1px 3px rgba(15,23,42,.05), 0 10px 26px -22px rgba(15,23,42,.45)',
             textAlign: 'left',
             opacity: dim ? 0.62 : 1,
             cursor: onClick ? 'pointer' : 'default',
           },
         },
-        overdue || accent
+        overdue || accent || tone
           ? h('span', {
               style: {
                 position: 'absolute',
                 left: 0,
-                top: accent && !overdue ? 11 : 0,
-                bottom: accent && !overdue ? 11 : 0,
+                top: 10,
+                bottom: 10,
                 width: 3,
-                background: overdue ? C.danger : C.brand,
-                borderTopLeftRadius: overdue ? 11 : 3,
-                borderBottomLeftRadius: overdue ? 11 : 3,
+                borderRadius: '0 3px 3px 0',
+                background: overdue ? C.danger : tone || C.brand,
               },
             })
           : null,
@@ -898,7 +951,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 行标题。 */
-    function Title({ children, size = 13.5, weight = 580, color = C.text }) {
+    function Title({ children, size = 14, weight = 600, color = C.text }) {
       return h(
         'span',
         {
@@ -908,6 +961,7 @@ window.__ModuleLoader__.load({
             color,
             fontWeight: weight,
             lineHeight: 1.45,
+            letterSpacing: '-0.005em',
             overflow: 'hidden',
             display: '-webkit-box',
             WebkitLineClamp: 2,
@@ -1035,11 +1089,13 @@ window.__ModuleLoader__.load({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 4,
-            padding: '1px 7px',
+            padding: '2px 8px',
             borderRadius: 999,
-            fontSize: 11,
-            lineHeight: 1.6,
+            fontSize: 11.5,
+            fontWeight: 550,
+            lineHeight: 1.5,
             whiteSpace: 'nowrap',
+            fontVariantNumeric: 'tabular-nums',
             color: color || C.sub,
             border: `1px solid ${color ? `color-mix(in srgb, ${color} 35%, transparent)` : C.line}`,
             background: color ? `color-mix(in srgb, ${color} 8%, transparent)` : 'transparent',
@@ -1060,16 +1116,17 @@ window.__ModuleLoader__.load({
           className: 'zt-chipbtn',
           style: {
             font: 'inherit',
-            fontSize: 12,
-            fontWeight: 520,
+            fontSize: 12.5,
+            fontWeight: 560,
             lineHeight: 1.6,
-            padding: '4px 12px',
-            borderRadius: 8,
+            padding: '5px 13px',
+            borderRadius: 9,
             cursor: disabled ? 'default' : 'pointer',
             opacity: disabled ? 0.45 : 1,
             color: primary ? 'var(--dsw-alias-label-primary-foreground, #fff)' : C.text,
             background: primary ? C.brand : C.layer1,
-            border: primary ? '1px solid transparent' : `1px solid ${C.line}`,
+            border: primary ? '1px solid transparent' : `1px solid color-mix(in srgb, ${C.line} 80%, transparent)`,
+            boxShadow: primary ? `0 2px 8px -2px color-mix(in srgb, ${C.brand} 55%, transparent)` : '0 1px 2px rgba(15,23,42,.04)',
           },
         },
         children,
@@ -1133,15 +1190,16 @@ window.__ModuleLoader__.load({
               'span',
               {
                 style: {
-                  width: 34,
-                  height: 34,
+                  width: 44,
+                  height: 44,
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: 10,
-                  border: `1px dashed ${C.line}`,
-                  color: C.dim,
-                  fontSize: 15,
+                  borderRadius: 14,
+                  border: `1px dashed color-mix(in srgb, ${C.brand} 35%, ${C.line})`,
+                  background: `color-mix(in srgb, ${C.brand} 6%, transparent)`,
+                  color: C.brand,
+                  fontSize: 20,
                 },
               },
               kind === 'error' ? '!' : '∅',
@@ -1613,8 +1671,20 @@ window.__ModuleLoader__.load({
             label: t('act.finish'),
             fields: [
               { key: 'finishedDate', kind: 'date', label: t('field.finishedDate'), value: today(), required: true },
-              { key: 'realStarted', kind: 'date', label: t('field.realStarted'), value: item.realStarted || today(), required: true },
-              { key: 'currentConsumed', kind: 'number', label: t('field.currentConsumed'), value: String(item.consumed ?? 0), required: true },
+              // 禅道返回的是「2026-11-25 00:00:00」，日期控件只认 YYYY-MM-DD，不截断会显示空白并卡住必填校验。
+              { key: 'realStarted', kind: 'date', label: t('field.realStarted'), value: String(item.realStarted || today()).slice(0, 10), required: true },
+              {
+                key: 'currentConsumed',
+                kind: 'number',
+                label: t('field.currentConsumed'),
+                // 禅道要求「总计消耗」大于 0 才能完成：默认取「已耗 + 剩余」，没有就退回预估工时，再退回 1。
+                value: String(
+                  (Number(item.consumed ?? 0) || 0) + (Number(item.left ?? 0) || 0) ||
+                    (Number(item.estimate ?? 0) || 0) ||
+                    1,
+                ),
+                required: true,
+              },
               comment,
             ],
           })
@@ -1829,7 +1899,7 @@ window.__ModuleLoader__.load({
           await api('/action', { method: 'POST', body: { kind, id: item.id, action: open.id, fields: values } })
           setOpen(null)
           REFRESH.emit()
-          onDone?.()
+          onDone?.({ removed: false })
         } catch (problem) {
           setError(problem instanceof Error ? problem.message : String(problem))
         } finally {
@@ -1844,7 +1914,7 @@ window.__ModuleLoader__.load({
           await api('/delete', { method: 'POST', body: { kind, id: item.id } })
           setConfirming(false)
           REFRESH.emit()
-          onDone?.()
+          onDone?.({ removed: true })
         } catch (problem) {
           setError(problem instanceof Error ? problem.message : String(problem))
         } finally {
@@ -2498,6 +2568,7 @@ window.__ModuleLoader__.load({
           onClick: onOpen,
           selected,
           onSelect,
+          tone: statusColor(bug.status),
         },
         h(
           'span',
@@ -2636,6 +2707,7 @@ window.__ModuleLoader__.load({
           onSelect,
           dim: dimmed,
           kind,
+          tone: statusColor(task.status),
         },
         h(
           'span',
@@ -2653,7 +2725,7 @@ window.__ModuleLoader__.load({
         h(
           'span',
           { style: { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' } },
-          kind === 'parent' ? h(Badge, { color: C.brand }, t('tasks.main')) : null,
+          kind === 'parent' ? h(Badge, { color: '#2563eb' }, t('tasks.main')) : null,
           h(Assignee, { name: task.assignedToName, fallback: t('field.unassigned') }),
           h(StatusPill, { text: task.statusText, color: statusColor(task.status) }),
           h(Badge, { color: task.pri <= 2 ? C.warn : C.sub }, task.priText),
@@ -2811,6 +2883,7 @@ window.__ModuleLoader__.load({
           onClick: onOpen,
           selected,
           onSelect,
+          tone: statusColor(story.status),
         },
         h(
           'span',
@@ -2983,7 +3056,7 @@ window.__ModuleLoader__.load({
     function FilterBar({ children }) {
       return h(
         'div',
-        { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+        { className: 'zt-filterbar', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
         children,
       )
     }
@@ -3006,6 +3079,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ kind: 'loading' })
       const [openBug, setOpenBug] = useState(null)
       const [detail, setDetail] = useState(null)
+      const [detailTick, setDetailTick] = useState(0)
       const selection = useSelection()
       const [batch, setBatch] = useState(null)
 
@@ -3027,7 +3101,7 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         if (product === '') return
-        setState({ kind: 'loading' })
+        setState((previous) => (previous.kind === 'ready' ? previous : { kind: 'loading' }))
         try {
           // 一次拿全量（recPerPage 上限 1000），前端再筛选分页，避免翻页丢筛选结果。
           const body = await api(`/bugs?product=${product}&status=${serverView}&page=1&limit=1000`)
@@ -3055,7 +3129,7 @@ window.__ModuleLoader__.load({
           return
         }
         let alive = true
-        setDetail({ kind: 'loading' })
+        setDetail((previous) => (previous?.kind === 'ready' ? previous : { kind: 'loading' }))
         api(`/bug?id=${openBug.id}`)
           .then((body) => {
             if (alive) setDetail({ kind: 'ready', bug: body.bug })
@@ -3066,7 +3140,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [openBug])
+      }, [openBug, detailTick])
 
       const raw = state.kind === 'ready' ? state.bugs : []
 
@@ -3241,7 +3315,7 @@ window.__ModuleLoader__.load({
           { style: { display: 'flex', gap: 12, minHeight: 0, flex: 1 } },
           h(
             'div',
-            { style: { display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1, overflow: 'auto', paddingRight: 2 } },
+            { style: { display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, flex: 1, overflow: 'auto', paddingRight: 2 } },
             state.kind === 'loading' ? h(SkeletonRows, { count: 6 }) : null,
             state.kind === 'error' ? h(State, { kind: 'error', message: state.message, onRetry: () => void load(), t }) : null,
             state.kind === 'ready' && bugs.length === 0 ? h(State, { kind: 'empty', t }) : null,
@@ -3271,10 +3345,21 @@ window.__ModuleLoader__.load({
           openBug === null
             ? null
             : detail?.kind === 'ready'
-              ? h(BugDetail, { bug: detail.bug, t, onClose: () => setOpenBug(null), onDone: () => setOpenBug(null) })
+              ? h(BugDetail, {
+                  bug: detail.bug,
+                  t,
+                  onClose: () => setOpenBug(null),
+                  onDone: (result) => {
+                    if (result?.removed === true) {
+                      setOpenBug(null)
+                    } else {
+                      setDetailTick((value) => value + 1)
+                    }
+                  },
+                })
               : h(
                   'div',
-                  { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
+                  { className: 'zt-drawer', style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 12, background: C.layer1, alignSelf: 'flex-start' } },
                   h(State, { kind: detail?.kind === 'error' ? 'error' : 'loading', message: detail?.message, t }),
                 ),
         ),
@@ -3299,6 +3384,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ kind: 'loading' })
       const [open, setOpen] = useState(null)
       const [detail, setDetail] = useState(null)
+      const [detailTick, setDetailTick] = useState(0)
       const [kind, setKind] = useState(VIEW.mineKind || '')
       const [status, setStatus] = useState(VIEW.mineStatus || '')
       const [keyword, setKeyword] = useState(VIEW.mineKeyword || '')
@@ -3312,7 +3398,7 @@ window.__ModuleLoader__.load({
       }, [kind, status, keyword, overdueOnly])
 
       const load = useCallback(async () => {
-        setState({ kind: 'loading' })
+        setState((previous) => (previous.kind === 'ready' ? previous : { kind: 'loading' }))
         try {
           const body = await api('/mine')
           setState({ kind: 'ready', ...body })
@@ -3339,7 +3425,7 @@ window.__ModuleLoader__.load({
           return
         }
         let alive = true
-        setDetail({ kind: 'loading' })
+        setDetail((previous) => (previous?.kind === 'ready' ? previous : { kind: 'loading' }))
         const path = open.kind === 'bug' ? `/bug?id=${open.id}` : `/task?id=${open.id}`
         api(path)
           .then((body) => {
@@ -3351,7 +3437,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [open])
+      }, [open, detailTick])
 
       if (state.kind !== 'ready') {
         return h(
@@ -3412,7 +3498,7 @@ window.__ModuleLoader__.load({
         { style: { display: 'flex', gap: 12, minHeight: 0, flex: 1 } },
         h(
           'div',
-          { style: { display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
+          { style: { display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
           h(
             FilterBar,
             null,
@@ -3486,17 +3572,34 @@ window.__ModuleLoader__.load({
           ? null
           : detail?.kind === 'ready'
             ? detail.type === 'bug'
-              ? h(BugDetail, { bug: detail.item, t, onClose: () => setOpen(null), onDone: () => setOpen(null) })
+              ? h(BugDetail, {
+                    bug: detail.item,
+                    t,
+                    onClose: () => setOpen(null),
+                    onDone: (result) => {
+                      if (result?.removed === true) {
+                        setOpen(null)
+                      } else {
+                        setDetailTick((value) => value + 1)
+                      }
+                    },
+                  })
               : h(TaskDetail, {
                   task: detail.item,
                   t,
                   onClose: () => setOpen(null),
-                  onDone: () => setOpen(null),
+                  onDone: (result) => {
+                    if (result?.removed === true) {
+                      setOpen(null)
+                    } else {
+                      setDetailTick((value) => value + 1)
+                    }
+                  },
                   onOpenTask: (id) => setOpen({ type: 'task', id }),
                 })
             : h(
                 'div',
-                { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
+                { className: 'zt-drawer', style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 12, background: C.layer1, alignSelf: 'flex-start' } },
                 h(State, { kind: detail?.kind === 'error' ? 'error' : 'loading', message: detail?.message, t }),
               ),
       )
@@ -3513,6 +3616,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ kind: 'loading' })
       const [openTask, setOpenTask] = useState(null)
       const [detail, setDetail] = useState(null)
+      const [detailTick, setDetailTick] = useState(0)
       const selection = useSelection()
       const [batch, setBatch] = useState(null)
 
@@ -3527,7 +3631,7 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         if (execution === '') return
-        setState({ kind: 'loading' })
+        setState((previous) => (previous.kind === 'ready' ? previous : { kind: 'loading' }))
         try {
           const body = await api(`/tasks?execution=${execution}`)
           setState({ kind: 'ready', tasks: body.tasks ?? [] })
@@ -3554,7 +3658,7 @@ window.__ModuleLoader__.load({
           return
         }
         let alive = true
-        setDetail({ kind: 'loading' })
+        setDetail((previous) => (previous?.kind === 'ready' ? previous : { kind: 'loading' }))
         api(`/task?id=${openTask}`)
           .then((body) => {
             if (alive) setDetail({ kind: 'ready', task: body.task })
@@ -3565,7 +3669,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [openTask])
+      }, [openTask, detailTick])
 
       const raw = state.kind === 'ready' ? state.tasks : []
 
@@ -3644,24 +3748,10 @@ window.__ModuleLoader__.load({
       }, [tree])
 
       /** 递归渲染：父行 + 缩进在竖线里的子行，视觉上是一组。 */
-      const subtreeIds = (node) => {
-        const out = [node.task.id]
-        const walk = (current) => {
-          for (const kid of current.children ?? []) {
-            out.push(kid.task.id)
-            walk(kid)
-          }
-        }
-        walk(node)
-        return out
-      }
       const renderNodes = (nodes, depth) =>
         nodes.map((node) => {
           const kids = node.children
           const folded = collapsed.has(node.task.id)
-          const scopeIds = subtreeIds(node)
-          const pickedCount = scopeIds.filter((id) => selection.has(id)).length
-          const allPicked = pickedCount === scopeIds.length
           return h(
             'div',
             { key: node.task.id, style: { display: 'flex', flexDirection: 'column' } },
@@ -3671,9 +3761,8 @@ window.__ModuleLoader__.load({
               kind: depth > 0 ? 'child' : 'parent',
               active: openTask === node.task.id,
               onOpen: () => setOpenTask(node.task.id),
-              selected: allPicked,
-              mixed: pickedCount > 0 && !allPicked,
-              onSelect: (on) => selection.setMany(scopeIds, on),
+              selected: selection.has(node.task.id),
+              onSelect: (on) => selection.toggle(node.task.id, on),
               collapsed: folded,
               childCount: kids.length,
               onToggle:
@@ -3828,7 +3917,7 @@ window.__ModuleLoader__.load({
           { style: { display: 'flex', gap: 12, minHeight: 0, flex: 1 } },
           h(
             'div',
-            { style: { display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
+            { style: { display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
             state.kind !== 'ready'
               ? h(State, { kind: state.kind, message: state.message, onRetry: () => void load(), t })
               : tasks.length === 0
@@ -3842,12 +3931,18 @@ window.__ModuleLoader__.load({
                   task: detail.task,
                   t,
                   onClose: () => setOpenTask(null),
-                  onDone: () => setOpenTask(null),
+                  onDone: (result) => {
+                    if (result?.removed === true) {
+                      setOpenTask(null)
+                    } else {
+                      setDetailTick((value) => value + 1)
+                    }
+                  },
                   onOpenTask: (id) => setOpenTask(id),
                 })
               : h(
                   'div',
-                  { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
+                  { className: 'zt-drawer', style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 12, background: C.layer1, alignSelf: 'flex-start' } },
                   h(State, { kind: detail?.kind === 'error' ? 'error' : 'loading', message: detail?.message, t }),
                 ),
         ),
@@ -3878,6 +3973,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState({ kind: 'loading' })
       const [openStory, setOpenStory] = useState(null)
       const [detail, setDetail] = useState(null)
+      const [detailTick, setDetailTick] = useState(0)
       const selection = useSelection()
       const [batch, setBatch] = useState(null)
 
@@ -3893,7 +3989,7 @@ window.__ModuleLoader__.load({
 
       const load = useCallback(async () => {
         if (product === '') return
-        setState({ kind: 'loading' })
+        setState((previous) => (previous.kind === 'ready' ? previous : { kind: 'loading' }))
         try {
           const body = await api(`/stories?product=${product}`)
           setState({ kind: 'ready', stories: body.stories ?? [] })
@@ -3920,7 +4016,7 @@ window.__ModuleLoader__.load({
           return
         }
         let alive = true
-        setDetail({ kind: 'loading' })
+        setDetail((previous) => (previous?.kind === 'ready' ? previous : { kind: 'loading' }))
         api(`/story?id=${openStory}`)
           .then((body) => {
             if (alive) setDetail({ kind: 'ready', story: body.story })
@@ -3931,7 +4027,7 @@ window.__ModuleLoader__.load({
         return () => {
           alive = false
         }
-      }, [openStory])
+      }, [openStory, detailTick])
 
       const raw = state.kind === 'ready' ? state.stories : []
 
@@ -4059,7 +4155,7 @@ window.__ModuleLoader__.load({
           { style: { display: 'flex', gap: 12, minHeight: 0, flex: 1 } },
           h(
             'div',
-            { style: { display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
+            { style: { display: 'flex', flexDirection: 'column', gap: 10, flex: 1, minWidth: 0, overflow: 'auto', paddingRight: 2 } },
             state.kind !== 'ready'
               ? h(State, { kind: state.kind, message: state.message, onRetry: () => void load(), t })
               : stories.length === 0
@@ -4079,10 +4175,21 @@ window.__ModuleLoader__.load({
           openStory === null
             ? null
             : detail?.kind === 'ready'
-              ? h(StoryDetail, { story: detail.story, t, onClose: () => setOpenStory(null), onDone: () => setOpenStory(null) })
+              ? h(StoryDetail, {
+                  story: detail.story,
+                  t,
+                  onClose: () => setOpenStory(null),
+                  onDone: (result) => {
+                    if (result?.removed === true) {
+                      setOpenStory(null)
+                    } else {
+                      setDetailTick((value) => value + 1)
+                    }
+                  },
+                })
               : h(
                   'div',
-                  { style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 10, background: C.layer1 } },
+                  { className: 'zt-drawer', style: { width: 380, flex: 'none', border: `1px solid ${C.line}`, borderRadius: 12, background: C.layer1, alignSelf: 'flex-start' } },
                   h(State, { kind: detail?.kind === 'error' ? 'error' : 'loading', message: detail?.message, t }),
                 ),
         ),
@@ -4112,7 +4219,8 @@ window.__ModuleLoader__.load({
       // 宽度交给外层布局（width:100% + alignSelf:stretch）。不要用 JS 量视口：
       // Electron 高 DPI 下 clientWidth / innerWidth / devicePixelRatio 三者不自洽，量出来必然偏。
       const load = useCallback(async () => {
-        setBootstrap({ kind: 'loading' })
+        // 已经拿到数据就保持住：置回 loading 会把页签整棵卸载，详情抽屉、勾选和滚动位置全部丢失。
+        setBootstrap((previous) => (previous.kind === 'ready' ? previous : { kind: 'loading' }))
         try {
           const body = await api('/bootstrap')
           setBootstrap({ kind: 'ready', ...body })
@@ -4171,25 +4279,27 @@ window.__ModuleLoader__.load({
             padding: '18px 20px',
             boxSizing: 'border-box',
             color: C.text,
+            background: `color-mix(in srgb, ${C.layer2} 90%, transparent)`,
           },
         },
         h(
           'div',
-          { style: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 10, flexWrap: 'wrap', flex: 'none' } },
+          { className: 'zt-hero', style: { display: 'flex', alignItems: 'center', gap: 12, rowGap: 10, flexWrap: 'wrap', flex: 'none' } },
           h(
             'span',
             {
               style: {
-                width: 34,
-                height: 34,
+                width: 40,
+                height: 40,
                 flex: 'none',
-                borderRadius: 10,
+                borderRadius: 13,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: C.brand,
-                background: `color-mix(in srgb, ${C.brand} 12%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${C.brand} 26%, transparent)`,
+                background: `linear-gradient(160deg, color-mix(in srgb, ${C.brand} 18%, transparent), color-mix(in srgb, ${C.brand} 8%, transparent))`,
+                border: `1px solid color-mix(in srgb, ${C.brand} 30%, transparent)`,
+                boxShadow: `0 6px 16px -8px color-mix(in srgb, ${C.brand} 70%, transparent)`,
               },
             },
             h(
@@ -4203,7 +4313,7 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 160px' } },
-            h('span', { style: { fontSize: 15.5, fontWeight: 680, letterSpacing: '-0.01em', whiteSpace: 'nowrap' } }, t('panel.title')),
+            h('span', { style: { fontSize: 17, fontWeight: 700, letterSpacing: '-0.015em', whiteSpace: 'nowrap' } }, t('panel.title')),
             bootstrap.kind === 'ready'
               ? h(
                   'span',
@@ -4231,7 +4341,17 @@ window.__ModuleLoader__.load({
             },
           }),
           h(Button, { onClick: () => setSettingsOpen(true) }, t('settings.open')),
-          h(Button, { onClick: () => void load() }, t('panel.refresh')),
+          // 面板头的「刷新」要连当前页签的列表一起刷新，否则用户点了看不到新数据。
+          h(
+            Button,
+            {
+              onClick: () => {
+                REFRESH.emit()
+                void load()
+              },
+            },
+            t('panel.refresh'),
+          ),
         ),
         h(
           'div',

@@ -227,6 +227,17 @@ const ACTION_TEXT = {
   undeleted: '还原',
   undeletedby: '还原',
   syncdocs: '同步文档',
+  linked2project: '关联项目',
+  linked2execution: '关联迭代',
+  unlinked2project: '取消关联项目',
+  unlinked2execution: '取消关联迭代',
+  frombug: '由缺陷转入',
+  canceled: '取消',
+  cancelled: '取消',
+  suspended: '挂起',
+  teamjoined: '加入团队',
+  statuschanged: '状态变更',
+  'from-bug': '由缺陷转入',
 }
 /** 缺陷解决方案码 → 中文。 */
 const RESOLUTION_TEXT = {
@@ -785,7 +796,14 @@ class ZentaoClient {
   async story(id) {
     const payload = await this.detail(`/stories/${id}`, 'story')
     const names = await this.names()
-    const normalized = normalizeStory(payload.story ?? payload, names, true)
+    const raw = payload.story ?? payload
+    // 单条详情接口不返回 productName，用产品缓存补上（与缺陷详情同一处理）。
+    let productName = String(raw.productName ?? '')
+    if (productName === '' && Number(raw.product ?? 0) > 0) {
+      const products = await this.products().catch(() => [])
+      productName = products.find((item) => item.id === Number(raw.product))?.name ?? ''
+    }
+    const normalized = normalizeStory({ ...raw, productName }, names, true)
     normalized.actions = (Array.isArray(payload.actions) ? payload.actions : []).map((action) => normalizeAction(action, names))
     return normalized
   }
@@ -811,10 +829,35 @@ class ZentaoClient {
    * @param {string} action - 动作名。
    * @param {Record<string, unknown>} fields - 表单值（只取白名单字段）。
    */
+  /**
+   * 取某个对象当前的处理人账号。
+   * 禅道的动作类接口在请求体缺 assignedTo 时会把处理人清空，所以动作前先读一次现值补上。
+   * @param {'bug'|'task'|'story'} kind - 对象类型。
+   * @param {number|string} id - 对象编号。
+   * @returns {Promise<string>} 处理人账号，读不到时返回空串。
+   */
+  async currentAssignee(kind, id) {
+    try {
+      if (kind === 'task') return String((await this.task(id))?.assignedTo ?? '')
+      if (kind === 'bug') return String((await this.bug(id))?.assignedTo ?? '')
+      if (kind === 'story') return String((await this.story(id))?.assignedTo ?? '')
+      return ''
+    } catch {
+      return ''
+    }
+  }
+
   async act(kind, id, action, fields) {
     const spec = ACTION_SPEC[kind]?.[action]
     if (!spec) throw Object.assign(new Error(`不支持的操作：${kind}/${action}`), { status: 400 })
     const body = pickFields(fields, spec.fields, spec.numeric)
+    // 禅道的 start / activate / resolve 这类动作，只要请求体里没有 assignedTo，就会把处理人清空
+    // （实测：task.start、task.activate、bug.resolve 都会变成空）。表单没填时补上当前处理人，
+    // 想改人仍然可以在弹窗里选。
+    if (spec.fields.includes('assignedTo') && String(body.assignedTo ?? '').trim() === '') {
+      const current = await this.currentAssignee(kind, id)
+      if (current !== '' && current !== 'closed') body.assignedTo = current
+    }
     if (kind === 'bug' && action === 'resolve' && !body.resolvedBuild) body.resolvedBuild = 'trunk'
     if (kind === 'task' && action === 'finish' && typeof body.finishedDate === 'string' && body.finishedDate.length <= 10) {
       const now = new Date()
