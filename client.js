@@ -110,6 +110,12 @@ window.__ModuleLoader__.load({
       'filter.keyword': '搜索编号 / 标题 / 处理人',
       'filter.overdue': '只看逾期',
       'filter.clear': '清除筛选',
+      'right.open': '在右栏打开',
+      'right.tab': '禅道',
+      'right.guideDesc': '看缺陷、我的待办、迭代任务与需求',
+      'right.quick': '禅道',
+      'persist.stale': '上次打开的{label} #{id} 已不存在，已回到列表',
+      'persist.executionGone': '上次的迭代已不存在，已切到最新迭代',
       'filter.none': '未指派',
       'sort.id': '编号 ↓',
       'sort.pri': '优先级',
@@ -302,6 +308,12 @@ window.__ModuleLoader__.load({
       'filter.keyword': 'Search id / title / owner',
       'filter.overdue': 'Overdue only',
       'filter.clear': 'Clear',
+      'right.open': 'Open in side panel',
+      'right.tab': 'ZenTao',
+      'right.guideDesc': 'Browse bugs, my work, tasks and stories',
+      'right.quick': 'ZenTao',
+      'persist.stale': '{label} #{id} you had open no longer exists; back to the list',
+      'persist.executionGone': 'The iteration you had open no longer exists; switched to the latest one',
       'filter.none': 'Unassigned',
       'sort.id': 'ID ↓',
       'sort.pri': 'Priority',
@@ -455,6 +467,14 @@ window.__ModuleLoader__.load({
 .zt-filterbar{padding:2px 0 6px}
 .zt-drawer{box-shadow:-14px 0 40px -24px rgba(15,23,42,.4)}
 .zt-row input[type="checkbox"]{accent-color:var(--dsw-alias-brand-primary,#3b82f6);border-radius:4px}
+/* —— 右栏（窄栏）紧凑布局 —— */
+.zt-compact{padding:12px 13px!important;gap:10px!important}
+.zt-compact .zt-hero{gap:8px!important;row-gap:6px!important}
+.zt-compact .zt-tab{font-size:11.5px;padding:2px 9px}
+.zt-compact .zt-filterbar{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;padding:2px 0 6px;scrollbar-width:none}
+.zt-compact .zt-filterbar::-webkit-scrollbar{height:0}
+.zt-compact .zt-selectionbar{display:none!important}
+.zt-compact .zt-drawer{position:absolute!important;inset:0!important;width:100%!important;max-width:100%!important;border-radius:0!important;border:none!important;z-index:20}
 `
 
     /**
@@ -832,6 +852,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
+          className: 'zt-selectionbar',
           style: {
             display: 'flex',
             alignItems: 'center',
@@ -1159,6 +1180,48 @@ window.__ModuleLoader__.load({
     }
 
     /** 空态 / 加载 / 错误 三态展示。 */
+    /** 一条降级提示：上次记住的对象没了，退回列表时告诉用户一声。 */
+    function StaleBanner({ text, onClose }) {
+      return h(
+        'div',
+        {
+          role: 'status',
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 12px',
+            borderRadius: 9,
+            fontSize: 12,
+            color: '#8a5a00',
+            background: 'color-mix(in srgb, #f59e0b 14%, transparent)',
+            border: '1px solid color-mix(in srgb, #f59e0b 34%, transparent)',
+            flex: 'none',
+          },
+        },
+        h('span', { style: { flex: '1 1 auto', minWidth: 0 } }, text),
+        h(
+          'button',
+          {
+            type: 'button',
+            onClick: onClose,
+            'aria-label': 'dismiss',
+            style: {
+              border: 'none',
+              background: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 13,
+              lineHeight: 1,
+              padding: 2,
+              opacity: 0.7,
+            },
+          },
+          '\u00d7',
+        ),
+      )
+    }
+
     function State({ kind, message, onRetry, t }) {
       const text =
         kind === 'loading' ? t('panel.loading') : kind === 'error' ? `${t('panel.error')}：${message ?? ''}` : t('panel.empty')
@@ -1544,7 +1607,56 @@ window.__ModuleLoader__.load({
      * 写操作成功后广播刷新：动作按钮在详情抽屉里，层级较深，用事件通知各页签重新拉数据。
      */
     // 客户端 uiWorkspace 服务句柄：apply 时取一次；取不到时「转为会话」降级为复制到剪贴板。
+    // ---- 页面快照：记住上次停在哪一屏（只存 id 与筛选，绝不存地址/账号/密码） ----
+    const SNAPSHOT_VERSION = 1
+    const SNAPSHOT_PREFIX = 'dsh-zentao-panel:state:'
+    const SNAPSHOT_DELAY_MS = 300
+    const snapshotCache = new Map()
+    const snapshotTimers = new Map()
+
+    /** 读某个界面（left/right）上次留下的快照；坏了就当没有。 */
+    function readSnapshot(surface) {
+      try {
+        const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+        if (!storage) return null
+        const raw = storage.getItem(SNAPSHOT_PREFIX + surface)
+        if (!raw) return null
+        const value = JSON.parse(raw)
+        if (!value || value.v !== SNAPSHOT_VERSION) return null
+        return value
+      } catch {
+        return null
+      }
+    }
+
+    /** 合并写快照（300ms 去抖，避免输入筛选时狂写盘）。 */
+    function schedulePersist(surface, patch) {
+      try {
+        const storage = typeof window !== 'undefined' ? window.localStorage : undefined
+        if (!storage) return
+        const merged = { ...(snapshotCache.get(surface) ?? readSnapshot(surface) ?? {}), ...patch, v: SNAPSHOT_VERSION }
+        snapshotCache.set(surface, merged)
+        const timer = snapshotTimers.get(surface)
+        if (timer) clearTimeout(timer)
+        snapshotTimers.set(
+          surface,
+          setTimeout(() => {
+            snapshotTimers.delete(surface)
+            try {
+              storage.setItem(SNAPSHOT_PREFIX + surface, JSON.stringify(snapshotCache.get(surface) ?? merged))
+            } catch {
+              /* 存储写满或被禁用：记忆功能静默失效，不影响面板本身 */
+            }
+          }, SNAPSHOT_DELAY_MS),
+        )
+      } catch {
+        /* 同上 */
+      }
+    }
+
     let UI_WORKSPACE = null
+    /** 打开右栏禅道页签的回调；宿主没有右栏时保持 null。 */
+    let OPEN_RIGHT = null
 
     const REFRESH = {
       listeners: new Set(),
@@ -3066,7 +3178,7 @@ window.__ModuleLoader__.load({
       return h('span', { style: { fontSize: 11.5, color: C.dim } }, children)
     }
 
-    function BugsTab({ bootstrap, products, t, jump, onJumped }) {
+    function BugsTab({ bootstrap, products, t, jump, onJumped, surface = 'left', onStale = null }) {
       const [product, setProduct] = useState(() => VIEW.product || 'all')
       const [status, setStatus] = useState(VIEW.status)
       const [severity, setSeverity] = useState(VIEW.bugSeverity || '')
@@ -3123,6 +3235,16 @@ window.__ModuleLoader__.load({
         setOpenBug({ id: jump.id })
         onJumped()
       }, [jump])
+      // 记住最近打开的详情（只存 id），下次进来直接回到这一条。
+      useEffect(() => {
+        schedulePersist(surface, { open: openBug ? { kind: 'bug', id: openBug.id } : null })
+      }, [openBug, surface])
+
+      // 筛选条件（产品 / 状态 / 关键词 / 排序…）都写回快照；VIEW 是模块级可变对象，
+      // 只能靠页签每次渲染后落盘一次，写入器本身有 300ms 去抖，不会抖成风暴。
+      useEffect(() => {
+        schedulePersist(surface, { view: { ...VIEW } })
+      })
       useEffect(() => {
         if (openBug === null) {
           setDetail(null)
@@ -3135,7 +3257,16 @@ window.__ModuleLoader__.load({
             if (alive) setDetail({ kind: 'ready', bug: body.bug })
           })
           .catch((error) => {
-            if (alive) setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+            if (!alive) return
+            // 记住的对象可能已经被删：关掉抽屉、退回列表，并清掉快照里的这一条，绝不把用户卡在错误抽屉里。
+            if (Number(error?.status) === 404) {
+              setDetail(null)
+              setOpenBug(null)
+              schedulePersist(surface, { open: null })
+              if (onStale) onStale(fill(t('persist.stale'), { label: t('tab.bugs'), id: openBug.id }))
+              return
+            }
+            setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
           })
         return () => {
           alive = false
@@ -3380,7 +3511,7 @@ window.__ModuleLoader__.load({
     }
 
 /** 我的待办页签：缺陷与任务合成一条按「逾期 → 到期 → 优先级」排序的清单。 */
-    function MineTab({ t, jump, onJumped }) {
+    function MineTab({ t, jump, onJumped, surface = 'left', onStale = null }) {
       const [state, setState] = useState({ kind: 'loading' })
       const [open, setOpen] = useState(null)
       const [detail, setDetail] = useState(null)
@@ -3415,10 +3546,20 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         if (!jump || (jump.kind !== 'bug' && jump.kind !== 'task')) return
-        setOpen({ type: jump.kind, id: jump.id })
+        setOpen({ kind: jump.kind, id: jump.id })
         onJumped()
       }, [jump])
 
+      // 记住最近打开的详情（只存 id），下次进来直接回到这一条。
+      useEffect(() => {
+        schedulePersist(surface, { open: open ? { kind: open.kind, id: open.id } : null })
+      }, [open, surface])
+
+      // 筛选条件（产品 / 状态 / 关键词 / 排序…）都写回快照；VIEW 是模块级可变对象，
+      // 只能靠页签每次渲染后落盘一次，写入器本身有 300ms 去抖，不会抖成风暴。
+      useEffect(() => {
+        schedulePersist(surface, { view: { ...VIEW } })
+      })
       useEffect(() => {
         if (open === null) {
           setDetail(null)
@@ -3432,7 +3573,16 @@ window.__ModuleLoader__.load({
             if (alive) setDetail({ kind: 'ready', type: open.kind, item: body.bug ?? body.task })
           })
           .catch((error) => {
-            if (alive) setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+            if (!alive) return
+            // 记住的对象可能已经被删：关掉抽屉、退回列表，并清掉快照里的这一条，绝不把用户卡在错误抽屉里。
+            if (Number(error?.status) === 404) {
+              setDetail(null)
+              setOpen(null)
+              schedulePersist(surface, { open: null })
+              if (onStale) onStale(fill(t('persist.stale'), { label: open.kind === 'bug' ? t('tab.bugs') : t('tab.tasks'), id: open.id }))
+              return
+            }
+            setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
           })
         return () => {
           alive = false
@@ -3556,14 +3706,14 @@ window.__ModuleLoader__.load({
                       bug: item.bug,
                       t,
                       active: open?.type === 'bug' && open.id === item.id,
-                      onOpen: () => setOpen({ type: 'bug', id: item.id }),
+                      onOpen: () => setOpen({ kind: 'bug', id: item.id }),
                     })
                   : h(TaskRow, {
                       key: `t${item.id}`,
                       task: item.task,
                       t,
                       active: open?.type === 'task' && open.id === item.id,
-                      onOpen: () => setOpen({ type: 'task', id: item.id }),
+                      onOpen: () => setOpen({ kind: 'task', id: item.id }),
                       parentLabel: item.task.parent > 0 ? fill(t('tasks.belongsTo'), { id: item.task.parent }) : '',
                     }),
               ),
@@ -3595,7 +3745,7 @@ window.__ModuleLoader__.load({
                       setDetailTick((value) => value + 1)
                     }
                   },
-                  onOpenTask: (id) => setOpen({ type: 'task', id }),
+                  onOpenTask: (id) => setOpen({ kind: 'task', id }),
                 })
             : h(
                 'div',
@@ -3606,7 +3756,7 @@ window.__ModuleLoader__.load({
     }
 
 /** 任务页签。 */
-    function TasksTab({ executions, t, jump, onJumped }) {
+    function TasksTab({ executions, t, jump, onJumped, surface = 'left', onStale = null }) {
       const [execution, setExecution] = useState(() => VIEW.execution || String(executions[0]?.id ?? ''))
       const [status, setStatus] = useState(VIEW.taskStatus || '')
       const [pri, setPri] = useState(VIEW.taskPri || '')
@@ -3652,6 +3802,16 @@ window.__ModuleLoader__.load({
         onJumped()
       }, [jump])
 
+      // 记住最近打开的详情（只存 id），下次进来直接回到这一条。
+      useEffect(() => {
+        schedulePersist(surface, { open: openTask ? { kind: 'task', id: openTask } : null })
+      }, [openTask, surface])
+
+      // 筛选条件（产品 / 状态 / 关键词 / 排序…）都写回快照；VIEW 是模块级可变对象，
+      // 只能靠页签每次渲染后落盘一次，写入器本身有 300ms 去抖，不会抖成风暴。
+      useEffect(() => {
+        schedulePersist(surface, { view: { ...VIEW } })
+      })
       useEffect(() => {
         if (openTask === null) {
           setDetail(null)
@@ -3664,7 +3824,16 @@ window.__ModuleLoader__.load({
             if (alive) setDetail({ kind: 'ready', task: body.task })
           })
           .catch((error) => {
-            if (alive) setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+            if (!alive) return
+            // 记住的对象可能已经被删：关掉抽屉、退回列表，并清掉快照里的这一条，绝不把用户卡在错误抽屉里。
+            if (Number(error?.status) === 404) {
+              setDetail(null)
+              setOpenTask(null)
+              schedulePersist(surface, { open: null })
+              if (onStale) onStale(fill(t('persist.stale'), { label: t('tab.tasks'), id: openTask }))
+              return
+            }
+            setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
           })
         return () => {
           alive = false
@@ -3719,7 +3888,10 @@ window.__ModuleLoader__.load({
         return kept
       }, [raw, matched])
 
-      const [collapsed, setCollapsed] = useState(() => new Set())
+      const [collapsed, setCollapsed] = useState(() => {
+        const saved = readSnapshot(surface)?.collapsed
+        return new Set(Array.isArray(saved) ? saved.filter((id) => Number.isInteger(id)) : [])
+      })
       const tree = useMemo(() => buildTaskTree(tasks, compare), [tasks, compare])
 
       /** 全选本页：包含父任务（父任务勾选即整棵子树，批量按 id 倒序执行，先关子任务）。 */
@@ -3733,6 +3905,11 @@ window.__ModuleLoader__.load({
         walk(tree)
         return ids
       }, [tree])
+
+      // 折叠状态也记住（只存 id 数组），下次进来保持同样的展开视图。
+      useEffect(() => {
+        schedulePersist(surface, { collapsed: [...collapsed] })
+      }, [collapsed, surface])
 
       const parentIds = useMemo(() => {
         const ids = []
@@ -3962,7 +4139,7 @@ window.__ModuleLoader__.load({
       )
     }
 /** 需求页签。 */
-    function StoriesTab({ products, t, jump, onJumped }) {
+    function StoriesTab({ products, t, jump, onJumped, surface = 'left', onStale = null }) {
       const [product, setProduct] = useState(() => VIEW.storyProduct || 'all')
       const [status, setStatus] = useState(VIEW.storyStatus || '')
       const [stage, setStage] = useState(VIEW.storyStage || '')
@@ -4010,6 +4187,16 @@ window.__ModuleLoader__.load({
         onJumped()
       }, [jump])
 
+      // 记住最近打开的详情（只存 id），下次进来直接回到这一条。
+      useEffect(() => {
+        schedulePersist(surface, { open: openStory ? { kind: 'story', id: openStory } : null })
+      }, [openStory, surface])
+
+      // 筛选条件（产品 / 状态 / 关键词 / 排序…）都写回快照；VIEW 是模块级可变对象，
+      // 只能靠页签每次渲染后落盘一次，写入器本身有 300ms 去抖，不会抖成风暴。
+      useEffect(() => {
+        schedulePersist(surface, { view: { ...VIEW } })
+      })
       useEffect(() => {
         if (openStory === null) {
           setDetail(null)
@@ -4022,7 +4209,16 @@ window.__ModuleLoader__.load({
             if (alive) setDetail({ kind: 'ready', story: body.story })
           })
           .catch((error) => {
-            if (alive) setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
+            if (!alive) return
+            // 记住的对象可能已经被删：关掉抽屉、退回列表，并清掉快照里的这一条，绝不把用户卡在错误抽屉里。
+            if (Number(error?.status) === 404) {
+              setDetail(null)
+              setOpenStory(null)
+              schedulePersist(surface, { open: null })
+              if (onStale) onStale(fill(t('persist.stale'), { label: t('tab.stories'), id: openStory }))
+              return
+            }
+            setDetail({ kind: 'error', message: error instanceof Error ? error.message : String(error) })
           })
         return () => {
           alive = false
@@ -4209,13 +4405,30 @@ window.__ModuleLoader__.load({
       )
     }
     /** 面板主体：顶部标题 + 四个页签。 */
-    function ZentaoPanel({ t }) {
+    function ZentaoPanel({ t, compact = false }) {
       const [bootstrap, setBootstrap] = useState({ kind: 'loading' })
-      const [tab, setTab] = useState('mine')
+      // 左栏主面板与右栏页签各存一份快照，互不干扰。
+      const surface = compact ? 'right' : 'left'
+      const restore = useRef(null)
+      if (restore.current === null) restore.current = readSnapshot(surface) ?? {}
+      // 快照里的筛选条件在页签挂载前先灌回 VIEW，否则页签读到的是空默认值。
+      const viewHydrated = useRef(false)
+      if (!viewHydrated.current) {
+        viewHydrated.current = true
+        if (restore.current.view && typeof restore.current.view === 'object') Object.assign(VIEW, restore.current.view)
+      }
+      const KIND_TAB = { bug: 'bugs', task: 'tasks', story: 'stories' }
+      const restoredOpen = restore.current.open && typeof restore.current.open.id === 'number' ? restore.current.open : null
+      const [tab, setTab] = useState(() => {
+        if (restoredOpen) return KIND_TAB[restoredOpen.kind] ?? 'mine'
+        return typeof restore.current.tab === 'string' ? restore.current.tab : 'mine'
+      })
       // 登录设置抽屉：账号没配、或接口返回 401 时自动打开。
       const [settingsOpen, setSettingsOpen] = useState(false)
-      // 全局搜索点中的条目：切到对应页签后由页签自己打开详情。
-      const [jump, setJump] = useState(null)
+      // 全局搜索点中的条目 / 上次记住的详情：切到对应页签后由页签自己打开。
+      const [jump, setJump] = useState(() => (restoredOpen ? { kind: restoredOpen.kind, id: restoredOpen.id } : null))
+      // 降级提示（迭代没了、详情没了）。
+      const [panelHint, setPanelHint] = useState(null)
       // 宽度交给外层布局（width:100% + alignSelf:stretch）。不要用 JS 量视口：
       // Electron 高 DPI 下 clientWidth / innerWidth / devicePixelRatio 三者不自洽，量出来必然偏。
       const load = useCallback(async () => {
@@ -4247,6 +4460,33 @@ window.__ModuleLoader__.load({
         () => (bootstrap.kind === 'ready' ? byIdDesc(bootstrap.executions) : []),
         [bootstrap],
       )
+
+      // 记住的产品 / 迭代可能已经被删：拿到 bootstrap 后立刻回落，避免页签一进来就报错。
+      const viewChecked = useRef(false)
+      const executionGone = useRef(false)
+      if (bootstrap.kind === 'ready' && !viewChecked.current) {
+        viewChecked.current = true
+        const productIds = new Set(bootstrap.products.map((item) => String(item.id)))
+        if (VIEW.product !== '' && VIEW.product !== 'all' && !productIds.has(String(VIEW.product))) VIEW.product = 'all'
+        const executionIds = new Set(bootstrap.executions.map((item) => String(item.id)))
+        if (VIEW.execution !== '' && !executionIds.has(String(VIEW.execution))) {
+          VIEW.execution = ''
+          executionGone.current = true
+        }
+        if (VIEW.storyProduct !== '' && VIEW.storyProduct && VIEW.storyProduct !== 'all' && !productIds.has(String(VIEW.storyProduct))) {
+          VIEW.storyProduct = 'all'
+        }
+      }
+      useEffect(() => {
+        if (!executionGone.current) return
+        executionGone.current = false
+        schedulePersist(surface, { view: { ...VIEW } })
+        setPanelHint(t('persist.executionGone'))
+      }, [bootstrap, surface, t])
+      // 记住停在哪个页签。
+      useEffect(() => {
+        schedulePersist(surface, { tab })
+      }, [surface, tab])
       // 下拉选项数据（新建 / 指派用），模块级共享，供 ActionBar / CreateButton 读取。
       USER_LIST = bootstrap.kind === 'ready' ? bootstrap.users ?? [] : []
       PRODUCT_LIST = products
@@ -4263,6 +4503,7 @@ window.__ModuleLoader__.load({
         'div',
         {
           'data-dsh-zentao-panel': '',
+          className: compact ? 'zt-compact' : undefined,
           style: {
             display: 'flex',
             flexDirection: 'column',
@@ -4276,7 +4517,7 @@ window.__ModuleLoader__.load({
             minWidth: 0,
             overflow: 'hidden',
             position: 'relative',
-            padding: '18px 20px',
+            padding: compact ? '12px 13px' : '18px 20px',
             boxSizing: 'border-box',
             color: C.text,
             background: `color-mix(in srgb, ${C.layer2} 90%, transparent)`,
@@ -4313,8 +4554,8 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 160px' } },
-            h('span', { style: { fontSize: 17, fontWeight: 700, letterSpacing: '-0.015em', whiteSpace: 'nowrap' } }, t('panel.title')),
-            bootstrap.kind === 'ready'
+            h('span', { style: { fontSize: compact ? 14.5 : 17, fontWeight: 700, letterSpacing: '-0.015em', whiteSpace: 'nowrap' } }, t('panel.title')),
+            bootstrap.kind === 'ready' && !compact
               ? h(
                   'span',
                   { style: { fontSize: 11.5, color: C.dim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
@@ -4326,20 +4567,33 @@ window.__ModuleLoader__.load({
                 )
               : null,
           ),
-          tab === 'bugs'
-            ? h(CreateButton, { kind: 'bug', t, onDone: () => REFRESH.emit() })
-            : tab === 'tasks'
-              ? h(CreateButton, { kind: 'task', t, onDone: () => REFRESH.emit() })
-              : tab === 'stories'
-                ? h(CreateButton, { kind: 'story', t, onDone: () => REFRESH.emit() })
-                : null,
-          h(SearchBox, {
+          compact
+            ? null
+            : tab === 'bugs' || tab === 'tasks' || tab === 'stories'
+              ? h(CreateButton, {
+                  kind: tab === 'bugs' ? 'bug' : tab === 'tasks' ? 'task' : 'story',
+                  t,
+                  onDone: () => REFRESH.emit(),
+                })
+              : null,
+          compact ? null : h(SearchBox, {
             t,
             onPick: (hit) => {
               setJump(hit)
               setTab(hit.kind === 'bug' ? 'bugs' : hit.kind === 'task' ? 'tasks' : 'stories')
             },
           }),
+          compact
+            ? null
+            : h(
+                Button,
+                {
+                  onClick: () => {
+                    if (OPEN_RIGHT) OPEN_RIGHT()
+                  },
+                },
+                t('right.open'),
+              ),
           h(Button, { onClick: () => setSettingsOpen(true) }, t('settings.open')),
           // 面板头的「刷新」要连当前页签的列表一起刷新，否则用户点了看不到新数据。
           h(
@@ -4381,17 +4635,18 @@ window.__ModuleLoader__.load({
             ),
           ),
         ),
+        panelHint ? h(StaleBanner, { text: panelHint, onClose: () => setPanelHint(null) }) : null,
         bootstrap.kind === 'loading'
           ? h(State, { kind: 'loading', t })
           : bootstrap.kind === 'error'
             ? h(State, { kind: 'error', message: bootstrap.message, onRetry: () => void load(), t })
             : tab === 'bugs'
-              ? h(BugsTab, { bootstrap, products, t, jump, onJumped: () => setJump(null) })
+              ? h(BugsTab, { bootstrap, products, t, jump, onJumped: () => setJump(null), surface, onStale: setPanelHint })
               : tab === 'mine'
-                ? h(MineTab, { t, jump, onJumped: () => setJump(null) })
+                ? h(MineTab, { t, jump, onJumped: () => setJump(null), surface, onStale: setPanelHint })
                 : tab === 'tasks'
-                  ? h(TasksTab, { executions, t, jump, onJumped: () => setJump(null) })
-                  : h(StoriesTab, { products, t, jump, onJumped: () => setJump(null) }),
+                  ? h(TasksTab, { executions, t, jump, onJumped: () => setJump(null), surface, onStale: setPanelHint })
+                  : h(StoriesTab, { products, t, jump, onJumped: () => setJump(null), surface, onStale: setPanelHint }),
         settingsOpen
           ? h(SettingsDrawer, {
               t,
@@ -4402,6 +4657,56 @@ window.__ModuleLoader__.load({
               },
             })
           : null,
+      )
+    }
+
+    /** 会话头部右上角的快捷按钮：一点就把禅道放进右栏，左边继续看会话。 */
+    function HeaderQuickAction({ t }) {
+      const [hover, setHover] = useState(false)
+      if (!OPEN_RIGHT) return null
+      return h(
+        'button',
+        {
+          type: 'button',
+          title: t('right.quick'),
+          'aria-label': t('right.quick'),
+          onClick: () => {
+            if (OPEN_RIGHT) OPEN_RIGHT()
+          },
+          onMouseEnter: () => setHover(true),
+          onMouseLeave: () => setHover(false),
+          style: {
+            width: 28,
+            height: 28,
+            flex: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+            borderRadius: 8,
+            border: '1px solid transparent',
+            background: hover ? `color-mix(in srgb, ${C.text} 8%, transparent)` : 'transparent',
+            color: hover ? C.text : C.sub,
+            cursor: 'pointer',
+            transition: 'background 120ms ease, color 120ms ease',
+          },
+        },
+        h(
+          'svg',
+          { viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' },
+          h('rect', { x: 1.75, y: 2.25, width: 12.5, height: 11.5, rx: 2 }),
+          h('path', { d: 'M1.75 6h12.5' }),
+          h('path', { d: 'M6 6v7.75' }),
+        ),
+      )
+    }
+
+    /** 右栏（右侧栏）里的禅道页签：紧凑布局，与主面板共用同一套接口。 */
+    function RightPaneBody({ t }) {
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', height: '100%', flex: '1 1 auto', minHeight: 0, minWidth: 0, overflow: 'hidden' } },
+        h(ZentaoPanel, { t, compact: true }),
       )
     }
 
@@ -4448,6 +4753,82 @@ window.__ModuleLoader__.load({
         }, 'zentao-panel: styles')
 
         const t = ctx.locale.bind(NS)
+
+        // 右栏（右侧栏）：宿主提供 sidebarRightTabs / sidebarRight 时注册「禅道」页签类型；
+        // 老版本宿主没有这两个服务，整段跳过，主面板照常工作。
+        try {
+          const sidebarRight = ctx.get('sidebarRight')
+          OPEN_RIGHT = sidebarRight
+            ? () => {
+                try {
+                  sidebarRight.openTab('zentao')
+                } catch {
+                  /* 没有在屏会话时无处可开，忽略即可 */
+                }
+              }
+            : null
+        } catch {
+          OPEN_RIGHT = null
+        }
+
+        try {
+          const tabRegistry = ctx.get('sidebarRightTabs')
+          if (tabRegistry) {
+            ctx.effect(
+              () =>
+                tabRegistry.register({
+                  id: 'dsh-zentao-panel',
+                  kind: 'zentao',
+                  multiple: false,
+                  keepMounted: true,
+                  title: () => t('right.tab'),
+                  guide: [
+                    {
+                      id: 'zentao',
+                      order: 60,
+                      title: () => t('right.tab'),
+                      description: () => t('right.guideDesc'),
+                      icon: ZentaoIcon,
+                    },
+                  ],
+                }),
+              'zentao-panel: right tab type',
+            )
+            ctx.effect(
+              () =>
+                ctx.slots.inject('sidebar.right.pane.tab', () =>
+                  ctx.slots.register(
+                    { name: 'sidebar.right.pane.tab', key: 'dsh-zentao-panel', locale: NS },
+                    () => h(RightPaneBody, { t }),
+                  ),
+                ),
+              'zentao-panel: right tab body',
+            )
+          }
+        } catch {
+          /* 宿主没有右栏 */
+        }
+
+        // 会话头部右上角的快捷入口：一点把禅道放进右栏（与侧边栏入口指向同一个面板）。
+        try {
+          ctx.effect(
+            () =>
+              ctx.slots.inject('conversation.session.header.utilities', () =>
+                ctx.slots.register(
+                  {
+                    name: 'conversation.session.header.utilities',
+                    id: 'zentao',
+                    order: 40,
+                    label: () => t('right.quick'),
+                  },
+                  () => h(HeaderQuickAction, { t }),
+                ),
+              ),
+            'zentao-panel: header quick action',
+          )
+        } catch {
+          /* 宿主没有会话头部槽位 */
+        }
 
         // 取不到 uiWorkspace 时（例如精简宿主），「转为会话」降级为复制到剪贴板。
         try {

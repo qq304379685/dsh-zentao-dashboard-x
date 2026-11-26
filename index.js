@@ -571,10 +571,13 @@ class ZentaoClient {
         textOf(result.payload?.reason) ||
         textOf(result.payload?.message) ||
         `HTTP ${result.response.status}`
+      // 禅道删掉的对象会返回 HTTP 200 + {"status":"fail","message":"Bug does not exist."}，
+      // 这里翻译成 404，前端才能把「上次打开的对象已不存在」降级掉，而不是弹一个错误抽屉。
+      const missing = /does not exist|not exist|不存在|已被删除/i.test(detail)
       const label = forbidden
         ? `当前禅道账号没有该操作权限（${path}）：${detail}`
         : `禅道接口错误（${path}）：${detail}`
-      throw Object.assign(new Error(label), { status: forbidden ? 403 : 502 })
+      throw Object.assign(new Error(label), { status: forbidden ? 403 : missing ? 404 : 502 })
     }
     return result.payload
   }
