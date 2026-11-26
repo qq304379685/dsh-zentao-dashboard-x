@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "ZenTao panel",
-    "description": "Browse ZenTao bugs, your assignments, iteration tasks and product stories from a DSH panel."
+    "description": "Browse ZenTao bugs, your assignments, iteration tasks and product stories in DSH — main panel plus a right-side tab, with assistant tools that can read and update ZenTao."
   }
 }
