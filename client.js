@@ -1657,6 +1657,22 @@ window.__ModuleLoader__.load({
     let UI_WORKSPACE = null
     /** 打开右栏禅道页签的回调；宿主没有右栏时保持 null。 */
     let OPEN_RIGHT = null
+    /**
+     * 右栏服务由兄弟插件（ui-sidebar-right）在 apply 里 provide，
+     * 插件激活时它多半还没 active，所以 OPEN_RIGHT 是异步填进来的；
+     * 取到之后要通知已挂载的头部按钮重渲染，否则一次 null 就一直不显示。
+     */
+    const OPEN_RIGHT_WATCHERS = new Set()
+    function publishOpenRight(fn) {
+      OPEN_RIGHT = fn
+      for (const notify of [...OPEN_RIGHT_WATCHERS]) {
+        try {
+          notify()
+        } catch {
+          /* 某个按钮卸载中，忽略 */
+        }
+      }
+    }
 
     const REFRESH = {
       listeners: new Set(),
@@ -4663,6 +4679,16 @@ window.__ModuleLoader__.load({
     /** 会话头部右上角的快捷按钮：一点就把禅道放进右栏，左边继续看会话。 */
     function HeaderQuickAction({ t }) {
       const [hover, setHover] = useState(false)
+      const [, rerender] = useState(0)
+      // 右栏服务晚于本插件激活，订阅它到位的时机补一次渲染。
+      useEffect(() => {
+        const notify = () => rerender((n) => n + 1)
+        OPEN_RIGHT_WATCHERS.add(notify)
+        if (OPEN_RIGHT) notify()
+        return () => {
+          OPEN_RIGHT_WATCHERS.delete(notify)
+        }
+      }, [])
       if (!OPEN_RIGHT) return null
       return h(
         'button',
@@ -4754,60 +4780,69 @@ window.__ModuleLoader__.load({
 
         const t = ctx.locale.bind(NS)
 
-        // 右栏（右侧栏）：宿主提供 sidebarRightTabs / sidebarRight 时注册「禅道」页签类型；
-        // 老版本宿主没有这两个服务，整段跳过，主面板照常工作。
-        try {
-          const sidebarRight = ctx.get('sidebarRight')
-          OPEN_RIGHT = sidebarRight
-            ? () => {
-                try {
-                  sidebarRight.openTab('zentao')
-                } catch {
-                  /* 没有在屏会话时无处可开，忽略即可 */
+        // 右栏（右侧栏）：宿主提供 sidebarRightTabs / sidebarRight 时注册「禅道」页签类型。
+        // 这两个服务由 ui-sidebar-right 在自己的 apply 里 provide，本插件激活时它的 fiber
+        // 还没 active —— 一次性 ctx.get()（严格模式）只会拿到 undefined，所以必须用
+        // ctx.inject 等服务就绪再注册。老版本宿主没有这两个服务时回调不会触发，主面板照常工作。
+        ctx.inject(['sidebarRightTabs', 'sidebarRight'], (injected) => {
+          const sidebarRight = injected.get('sidebarRight')
+          const openRight =
+            sidebarRight && typeof sidebarRight.openTab === 'function'
+              ? () => {
+                  try {
+                    sidebarRight.openTab('zentao')
+                  } catch {
+                    /* 没有在屏会话时无处可开，忽略即可 */
+                  }
                 }
-              }
-            : null
-        } catch {
-          OPEN_RIGHT = null
-        }
-
-        try {
-          const tabRegistry = ctx.get('sidebarRightTabs')
-          if (tabRegistry) {
-            ctx.effect(
-              () =>
-                tabRegistry.register({
-                  id: 'dsh-zentao-panel',
-                  kind: 'zentao',
-                  multiple: false,
-                  keepMounted: true,
-                  title: () => t('right.tab'),
-                  guide: [
-                    {
-                      id: 'zentao',
-                      order: 60,
-                      title: () => t('right.tab'),
-                      description: () => t('right.guideDesc'),
-                      icon: ZentaoIcon,
-                    },
-                  ],
-                }),
-              'zentao-panel: right tab type',
-            )
-            ctx.effect(
-              () =>
-                ctx.slots.inject('sidebar.right.pane.tab', () =>
-                  ctx.slots.register(
-                    { name: 'sidebar.right.pane.tab', key: 'dsh-zentao-panel', locale: NS },
-                    () => h(RightPaneBody, { t }),
-                  ),
-                ),
-              'zentao-panel: right tab body',
-            )
+              : null
+          publishOpenRight(openRight)
+          // 热重载时新旧实例会在同一个模块作用域里先后跑：只有当前值还是自己那一份才清掉，
+          // 否则旧实例的清理会把新实例刚填好的回调抹成 null（图标于是又消失）。
+          const release = () => {
+            if (OPEN_RIGHT === openRight) publishOpenRight(null)
           }
-        } catch {
-          /* 宿主没有右栏 */
-        }
+
+          const tabRegistry = injected.get('sidebarRightTabs')
+          if (!tabRegistry) {
+            return release
+          }
+
+          const disposers = [
+            tabRegistry.register({
+              id: 'dsh-zentao-panel',
+              kind: 'zentao',
+              multiple: false,
+              keepMounted: true,
+              title: () => t('right.tab'),
+              guide: [
+                {
+                  id: 'zentao',
+                  order: 60,
+                  title: () => t('right.tab'),
+                  description: () => t('right.guideDesc'),
+                  icon: ZentaoIcon,
+                },
+              ],
+            }),
+            ctx.slots.inject('sidebar.right.pane.tab', () =>
+              ctx.slots.register(
+                { name: 'sidebar.right.pane.tab', key: 'dsh-zentao-panel', locale: NS },
+                () => h(RightPaneBody, { t }),
+              ),
+            ),
+          ]
+          return () => {
+            for (const dispose of disposers) {
+              try {
+                dispose()
+              } catch {
+                /* 已卸载 */
+              }
+            }
+            release()
+          }
+        })
 
         // 会话头部右上角的快捷入口：一点把禅道放进右栏（与侧边栏入口指向同一个面板）。
         try {
@@ -4830,12 +4865,14 @@ window.__ModuleLoader__.load({
           /* 宿主没有会话头部槽位 */
         }
 
-        // 取不到 uiWorkspace 时（例如精简宿主），「转为会话」降级为复制到剪贴板。
-        try {
-          UI_WORKSPACE = ctx.get('uiWorkspace') ?? null
-        } catch {
-          UI_WORKSPACE = null
-        }
+        // 同理，uiWorkspace 也是兄弟插件 provide 的，等服务就绪再取；
+        // 始终没有时（精简宿主）保持 null，「转为会话」降级为复制到剪贴板。
+        ctx.inject(['uiWorkspace'], (injected) => {
+          UI_WORKSPACE = injected.get('uiWorkspace') ?? null
+          return () => {
+            UI_WORKSPACE = null
+          }
+        })
 
         ctx.effect(() => {
           const disposers = [
@@ -4853,6 +4890,8 @@ window.__ModuleLoader__.load({
             for (const dispose of disposers) dispose()
           }
         }, 'zentao-panel: placement')
+
+
       },
     }
   },
